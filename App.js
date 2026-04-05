@@ -61,6 +61,11 @@ const AI_CHECK_URL = 'https://kkilkggghydodfnbeoyw.supabase.co/functions/v1/ai-c
 const SUPABASE_URL      = 'https://kkilkggghydodfnbeoyw.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtraWxrZ2dnaHlkb2RmbmJlb3l3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzOTg0MjQsImV4cCI6MjA5MDk3NDQyNH0.PbhjFAJiTdiL5ETE2xAYnyyVf5SsEf6H18Dmqnwv-N4';
 
+// Deep-link scheme Supabase uses for email confirmation / password reset.
+// In Expo Go the link opens as exp://<lan-ip>:8081 — we use the slug as path
+// so the app can intercept it. In a production build swap for your custom scheme.
+const AUTH_REDIRECT_URL = 'exp://192.168.1.7:8081/--/auth-callback';
+
 // True only when the developer has replaced the placeholder values above.
 const SUPABASE_CONFIGURED =
   !SUPABASE_URL.includes('<YOUR_PROJECT_REF>') &&
@@ -127,7 +132,10 @@ function AuthProvider({ children }) {
     if (!supabase) throw new Error('Supabase is not configured.');
     const { data, error } = await supabase.auth.signUp({
       email, password,
-      options: { data: { display_name: displayName } },
+      options: {
+        data: { display_name: displayName },
+        emailRedirectTo: AUTH_REDIRECT_URL,
+      },
     });
     if (error) throw error;
     return data;
@@ -150,7 +158,9 @@ function AuthProvider({ children }) {
 
   const sendPasswordReset = async (email) => {
     if (!supabase) throw new Error('Supabase is not configured.');
-    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: AUTH_REDIRECT_URL,
+    });
     if (error) throw error;
   };
 
@@ -5000,7 +5010,7 @@ function SignUpScreen({ navigation }) {
 }
 
 // ── Login Screen ──
-function LoginScreen({ navigation, onAuthSuccess }) {
+function LoginScreen({ navigation, onAuthSuccess, onSkip }) {
   const insets  = useSafeAreaInsets();
   const { signIn } = useContext(AuthContext);
   const [email,    setEmail]    = useState('');
@@ -5059,6 +5069,16 @@ function LoginScreen({ navigation, onAuthSuccess }) {
             <Text style={[T.small, { color: C.accent, fontWeight: '700' }]}>Sign Up</Text>
           </TouchableOpacity>
         </View>
+
+        {onSkip && (
+          <TouchableOpacity
+            style={{ alignItems: 'center', paddingVertical: S.md, marginTop: S.xs }}
+            onPress={onSkip}
+            activeOpacity={0.7}
+          >
+            <Text style={[T.small, { color: C.textMuted }]}>Skip for now — use without account</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -5262,7 +5282,7 @@ function AuthApp({ onAuthSuccess, onSkip }) {
         <Stack.Screen name="Welcome"         component={WelcomeScreen} />
         <Stack.Screen name="SignUp"          component={SignUpScreen} />
         <Stack.Screen name="Login">
-          {(props) => <LoginScreen {...props} onAuthSuccess={onAuthSuccess} />}
+          {(props) => <LoginScreen {...props} onAuthSuccess={onAuthSuccess} onSkip={onSkip} />}
         </Stack.Screen>
         <Stack.Screen name="ForgotPassword"  component={ForgotPasswordScreen} />
         <Stack.Screen name="AppOnboarding">
