@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/shach/cloude app/**)",
+      "Bash(mkdir assets:*)",
+      "Bash(powershell:*)",
+      "Bash(node:*)",
+      "Bash(npm install:*)",
+      "Bash(npx expo:*)",
+      "Bash(powershell -Command \"cd 'C:\\\\Users\\\\shach\\\\cloude app'; npx expo install expo-notifications expo-secure-store '@react-native-community/netinfo' '@supabase/supabase-js' 2>&1\")"
+    ]
+  }
+}

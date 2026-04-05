@@ -1,0 +1,50 @@
+{
+  "expo": {
+    "name": "HandstandHub",
+    "slug": "handstandhub",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#0D1117"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.handstandhub.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "HandstandHub needs camera access to verify your handstand form.",
+        "NSMicrophoneUsageDescription": "HandstandHub needs microphone access for video recording."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0D1117"
+      },
+      "package": "com.handstandhub.app",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "web": {},
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "HandstandHub needs camera access to verify your handstand form.",
+          "microphonePermission": "HandstandHub needs microphone access for video recording.",
+          "recordAudioAndroid": true
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "HandstandHub needs microphone access for video recording."
+        }
+      ],
+      "expo-asset"
+    ]
+  }
+}
