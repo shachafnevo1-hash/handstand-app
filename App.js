@@ -28,6 +28,7 @@ import {
   ActivityIndicator, TextInput, KeyboardAvoidingView, Vibration, Alert,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
+import YoutubePlayer from 'react-native-youtube-iframe';
 import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import { Video, ResizeMode } from 'expo-av';
 import { NavigationContainer, DefaultTheme, useFocusEffect } from '@react-navigation/native';
@@ -43,6 +44,60 @@ import { createClient } from '@supabase/supabase-js';
 import * as SecureStore from 'expo-secure-store';
 
 const { width, height } = Dimensions.get('window');
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THEME — must be defined first; everything else in the file depends on these
+// ─────────────────────────────────────────────────────────────────────────────
+const C = {
+  bg:          '#161B22',
+  bgCard:      '#1C2333',
+  bgCardAlt:   '#242C3D',
+  bgDeep:      '#0D1117',
+  bgElevated:  '#21262D',
+  accent:      '#FF6B35',
+  accentLight: '#FF8C5A',
+  accentDim:   'rgba(255,107,53,0.15)',
+  gold:        '#F4C430',
+  goldDim:     'rgba(244,196,48,0.15)',
+  text:        '#FFFFFF',
+  textSub:     '#8B949E',
+  textMuted:   '#6E7681',
+  border:      '#30363D',
+  borderLight: '#3D444D',
+  success:     '#3FB950',
+  successDim:  'rgba(63,185,80,0.15)',
+  error:       '#F85149',
+  errorDim:    'rgba(248,81,73,0.15)',
+  white:       '#FFFFFF',
+  black:       '#000000',
+  overlay:     'rgba(0,0,0,0.75)',
+};
+
+const G = {
+  accent:   ['#FF6B35', '#E8521C'],
+  accentH:  ['#FF8C5A', '#FF6B35'],
+  gold:     ['#F4C430', '#D4A017'],
+  success:  ['#3FB950', '#2EA043'],
+  dark:     ['#1C2333', '#161B22'],
+  hero:     ['rgba(255,107,53,0.85)', 'rgba(232,82,28,0.6)'],
+  cardOver: ['transparent', 'rgba(13,17,23,0.95)'],
+  splash:   ['#0D1117', '#161B22', '#1C2333'],
+};
+
+const S = { xs: 4, sm: 8, md: 16, lg: 24, xl: 32, xxl: 48 };
+const R = { sm: 8, md: 12, lg: 16, xl: 20, xxl: 28, full: 9999 };
+
+const T = {
+  h1:    { fontSize: 28, fontWeight: '900', letterSpacing: -0.5, color: C.text },
+  h2:    { fontSize: 22, fontWeight: '900', letterSpacing: -0.3, color: C.text },
+  h3:    { fontSize: 18, fontWeight: '800', color: C.text },
+  h4:    { fontSize: 15, fontWeight: '700', color: C.text },
+  body:  { fontSize: 14, fontWeight: '400', lineHeight: 21, color: C.textSub },
+  small: { fontSize: 12, fontWeight: '400', lineHeight: 18, color: C.textSub },
+  label: { fontSize: 10, fontWeight: '700', letterSpacing: 1.5, textTransform: 'uppercase', color: C.textMuted },
+  cap:   { fontSize: 11, fontWeight: '500', color: C.textMuted },
+  num:   { fontSize: 32, fontWeight: '900', letterSpacing: -1, color: C.text },
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BACKEND PROXY URL
@@ -227,58 +282,549 @@ function friendlyAuthError(error) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// THEME – Movemate aesthetic
+// PURCHASE / MONETIZATION SYSTEM — local mock (beta)
+// isPro / trial state stored in AsyncStorage. Real payments will be wired up
+// via RevenueCat once App Store / Play Store accounts are ready.
 // ─────────────────────────────────────────────────────────────────────────────
-const C = {
-  bg:          '#161B22',
-  bgCard:      '#1C2333',
-  bgCardAlt:   '#242C3D',
-  bgDeep:      '#0D1117',
-  bgElevated:  '#21262D',
-  accent:      '#FF6B35',
-  accentLight: '#FF8C5A',
-  accentDim:   'rgba(255,107,53,0.15)',
-  gold:        '#F4C430',
-  goldDim:     'rgba(244,196,48,0.15)',
-  text:        '#FFFFFF',
-  textSub:     '#8B949E',
-  textMuted:   '#6E7681',
-  border:      '#30363D',
-  borderLight: '#3D444D',
-  success:     '#3FB950',
-  successDim:  'rgba(63,185,80,0.15)',
-  error:       '#F85149',
-  errorDim:    'rgba(248,81,73,0.15)',
-  white:       '#FFFFFF',
-  black:       '#000000',
-  overlay:     'rgba(0,0,0,0.75)',
+const PURCHASE_KEY = '@handstandai_purchases';
+const TRIAL_DAYS   = 7;
+
+const PRODUCTS = {
+  PRO_MONTHLY: { id: 'pro_monthly', label: 'Pro Monthly', price: '$9.99', period: '/month',  priceNum: 9.99  },
+  PRO_ANNUAL:  { id: 'pro_annual',  label: 'Pro Annual',  price: '$59.99', period: '/year',  priceNum: 59.99, trialDays: 7 },
 };
 
-const G = {
-  accent:   ['#FF6B35', '#E8521C'],
-  accentH:  ['#FF8C5A', '#FF6B35'],
-  gold:     ['#F4C430', '#D4A017'],
-  success:  ['#3FB950', '#2EA043'],
-  dark:     ['#1C2333', '#161B22'],
-  hero:     ['rgba(255,107,53,0.85)', 'rgba(232,82,28,0.6)'],
-  cardOver: ['transparent', 'rgba(13,17,23,0.95)'],
-  splash:   ['#0D1117', '#161B22', '#1C2333'],
-};
+const FREE_MAX_LEVEL     = 2;   // levels 1-2 free, 3+ require Pro
+const FREE_WORKOUTS_WEEK = 3;   // max guided workouts per week on free plan
 
-const S = { xs: 4, sm: 8, md: 16, lg: 24, xl: 32, xxl: 48 };
-const R = { sm: 8, md: 12, lg: 16, xl: 20, xxl: 28, full: 9999 };
+// ─────────────────────────────────────────────────────────────────────────────
+// RETENTION — MILESTONES & FORGIVING STREAKS
+// ─────────────────────────────────────────────────────────────────────────────
+const MILESTONES_KEY = '@handstandai_milestones';
+const WEEKLY_SUMMARY_KEY = '@handstandai_weekly_summary';
 
-const T = {
-  h1:    { fontSize: 28, fontWeight: '900', letterSpacing: -0.5, color: C.text },
-  h2:    { fontSize: 22, fontWeight: '900', letterSpacing: -0.3, color: C.text },
-  h3:    { fontSize: 18, fontWeight: '800', color: C.text },
-  h4:    { fontSize: 15, fontWeight: '700', color: C.text },
-  body:  { fontSize: 14, fontWeight: '400', lineHeight: 21, color: C.textSub },
-  small: { fontSize: 12, fontWeight: '400', lineHeight: 18, color: C.textSub },
-  label: { fontSize: 10, fontWeight: '700', letterSpacing: 1.5, textTransform: 'uppercase', color: C.textMuted },
-  cap:   { fontSize: 11, fontWeight: '500', color: C.textMuted },
-  num:   { fontSize: 32, fontWeight: '900', letterSpacing: -1, color: C.text },
-};
+const MILESTONE_DEFS = [
+  { id: 'first_submission',  label: 'First Training Session',   emoji: '🎉', condition: (p) => p.submissions?.length >= 1 },
+  { id: 'streak_7',          label: '7-Day Streak',             emoji: '🔥', condition: (p) => (p.streak || 0) >= 7 },
+  { id: 'streak_30',         label: '30-Day Streak',            emoji: '🌟', condition: (p) => (p.streak || 0) >= 30 },
+  { id: 'streak_100',        label: '100-Day Streak',           emoji: '💎', condition: (p) => (p.streak || 0) >= 100 },
+  { id: 'level_2',           label: 'Level 2 Unlocked',         emoji: '🏆', condition: (p) => p.completedLevels?.includes(1) },
+  { id: 'level_3',           label: 'Level 3 Unlocked',         emoji: '⚡', condition: (p) => p.completedLevels?.includes(2) },
+  { id: 'sessions_10',       label: '10 Sessions Completed',    emoji: '💪', condition: (p) => p.submissions?.length >= 10 },
+  { id: 'sessions_50',       label: '50 Sessions Completed',    emoji: '🤸', condition: (p) => p.submissions?.length >= 50 },
+  { id: 'ai_verified',       label: 'First AI Verified Hold',   emoji: '🤖', condition: (p) => p.submissions?.some(s => s.aiDetected === true) },
+  { id: 'freestanding',      label: 'Freestanding Handstand!',  emoji: '🏅', condition: (p) => p.completedLevels?.includes(3) },
+];
+
+const MilestoneContext = React.createContext(null);
+
+function MilestoneProvider({ children }) {
+  const [earned,        setEarned]        = useState([]);   // array of milestone ids
+  const [celebrating,   setCelebrating]   = useState(null); // milestone def being shown
+  const [weeklySummary, setWeeklySummary] = useState(null);
+  const [showSummary,   setShowSummary]   = useState(false);
+  const confettiAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => { _loadMilestones(); _checkWeeklySummary(); }, []);
+
+  async function _loadMilestones() {
+    try {
+      const raw = await AsyncStorage.getItem(MILESTONES_KEY);
+      if (raw) setEarned(JSON.parse(raw));
+    } catch (_) {}
+  }
+
+  async function _saveEarned(next) {
+    try { await AsyncStorage.setItem(MILESTONES_KEY, JSON.stringify(next)); } catch (_) {}
+  }
+
+  async function _checkWeeklySummary() {
+    try {
+      const raw = await AsyncStorage.getItem(WEEKLY_SUMMARY_KEY);
+      const lastShown = raw ? JSON.parse(raw).lastShown : null;
+      const now = new Date();
+      // Show weekly summary on Sundays after 6pm, once per week
+      if (now.getDay() === 0 && now.getHours() >= 18) {
+        const lastDate = lastShown ? new Date(lastShown) : null;
+        const alreadyShownThisWeek = lastDate && (now - lastDate) < 7 * 86400000;
+        if (!alreadyShownThisWeek) {
+          // Will be populated by checkMilestones once progress is available
+          await AsyncStorage.setItem(WEEKLY_SUMMARY_KEY, JSON.stringify({ lastShown: now.toISOString() }));
+        }
+      }
+    } catch (_) {}
+  }
+
+  // Call after every progress update — checks for newly earned milestones
+  const checkMilestones = useCallback(async (progress) => {
+    let current = earned;
+    // reload in case state is stale
+    try {
+      const raw = await AsyncStorage.getItem(MILESTONES_KEY);
+      if (raw) current = JSON.parse(raw);
+    } catch (_) {}
+
+    for (const def of MILESTONE_DEFS) {
+      if (current.includes(def.id)) continue;
+      if (def.condition(progress)) {
+        const next = [...current, def.id];
+        current = next;
+        await _saveEarned(next);
+        setEarned(next);
+        // Celebrate the first new milestone found (queue others for next check)
+        setCelebrating(def);
+        _animateCelebration();
+        break; // one at a time
+      }
+    }
+  }, [earned]);
+
+  function _animateCelebration() {
+    confettiAnim.setValue(0);
+    Animated.sequence([
+      Animated.timing(confettiAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
+      Animated.delay(2800),
+      Animated.timing(confettiAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+    ]).start(() => setCelebrating(null));
+  }
+
+  const buildWeeklySummary = useCallback((progress) => {
+    const now = new Date();
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+    monday.setHours(0, 0, 0, 0);
+    const weekSubs = (progress.submissions || []).filter(s => new Date(s.date) >= monday);
+    const totalSec = weekSubs.reduce((n, s) => n + (s.duration || 0), 0);
+    const avgForm  = weekSubs.filter(s => s.formScore != null).reduce((acc, s, _, arr) => acc + s.formScore / arr.length, 0);
+    const summary  = {
+      sessions: weekSubs.length,
+      totalSeconds: totalSec,
+      avgFormScore: Math.round(avgForm) || null,
+      streak: progress.streak || 0,
+      level: progress.currentLevel || 1,
+    };
+    setWeeklySummary(summary);
+    setShowSummary(true);
+  }, []);
+
+  // Forgiving streak: allow 1 rest day per week without breaking
+  const computeForgivingStreak = useCallback((progress) => {
+    const subs = progress.submissions || [];
+    if (subs.length === 0) return { streak: 0, frozen: false };
+    const today = new Date(); today.setHours(0,0,0,0);
+    const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
+    const trainingDates = new Set(subs.map(s => {
+      const d = new Date(s.date); d.setHours(0,0,0,0); return d.getTime();
+    }));
+    // Check if today or yesterday has a session
+    const trainedToday     = trainingDates.has(today.getTime());
+    const trainedYesterday = trainingDates.has(yesterday.getTime());
+    // Check if last 7 days has at most 1 gap (forgiving rest day)
+    let consecutiveDays = 0;
+    let restDayUsed = false;
+    for (let i = 0; i < 30; i++) {
+      const d = new Date(today); d.setDate(d.getDate() - i);
+      if (trainingDates.has(d.getTime())) {
+        consecutiveDays++;
+      } else if (!restDayUsed && i > 0) {
+        restDayUsed = true; // forgive one gap
+      } else {
+        break;
+      }
+    }
+    const frozen = restDayUsed && !trainedToday && trainedYesterday;
+    return { streak: consecutiveDays, frozen };
+  }, []);
+
+  return (
+    <MilestoneContext.Provider value={{
+      earned, celebrating, checkMilestones,
+      weeklySummary, showSummary, setShowSummary, buildWeeklySummary,
+      computeForgivingStreak,
+    }}>
+      {children}
+      <MilestoneCelebration celebrating={celebrating} confettiAnim={confettiAnim} />
+      <WeeklySummaryModal summary={weeklySummary} visible={showSummary} onClose={() => setShowSummary(false)} />
+    </MilestoneContext.Provider>
+  );
+}
+
+// ── Confetti + Milestone celebration overlay ──────────────────────────────────
+function MilestoneCelebration({ celebrating, confettiAnim }) {
+  if (!celebrating) return null;
+  const scale = confettiAnim.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.5, 1.1, 1] });
+  const opacity = confettiAnim;
+
+  // Simple confetti using randomized dots
+  const dots = Array.from({ length: 24 }, (_, i) => ({
+    key: i,
+    x: Math.random() * width,
+    y: Math.random() * 300,
+    color: ['#F78166', '#FFD700', '#79C0FF', '#56D364', '#FF7EFF'][i % 5],
+    size: 6 + Math.random() * 8,
+  }));
+
+  return (
+    <Animated.View style={[ms.overlay, { opacity }]} pointerEvents="none">
+      {dots.map(d => (
+        <View key={d.key} style={{ position: 'absolute', left: d.x, top: d.y, width: d.size, height: d.size, borderRadius: d.size / 2, backgroundColor: d.color }} />
+      ))}
+      <Animated.View style={[ms.card, { transform: [{ scale }] }]}>
+        <Text style={{ fontSize: 56 }}>{celebrating.emoji}</Text>
+        <Text style={[T.h2, { textAlign: 'center', marginTop: S.sm }]}>Milestone!</Text>
+        <Text style={[T.body, { textAlign: 'center', color: C.accent, fontWeight: '700', marginTop: S.xs }]}>{celebrating.label}</Text>
+      </Animated.View>
+    </Animated.View>
+  );
+}
+
+// ── Weekly summary modal ──────────────────────────────────────────────────────
+function WeeklySummaryModal({ summary, visible, onClose }) {
+  if (!summary) return null;
+  const focusSuggestions = ['Work on hollow body', 'Drill wall handstand holds', 'Focus on straight-arm pressing', 'Practice kick-ups consistently'];
+  const nextFocus = focusSuggestions[summary.level % focusSuggestions.length];
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={ms.summaryOverlay}>
+        <View style={ms.summarySheet}>
+          <LinearGradient colors={G.accent} style={ms.summaryHero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+            <Text style={[T.label, { color: 'rgba(255,255,255,0.8)', letterSpacing: 2 }]}>WEEKLY SUMMARY</Text>
+            <Text style={[T.h1, { color: C.white, marginTop: S.xs }]}>This Week</Text>
+          </LinearGradient>
+
+          <View style={ms.summaryGrid}>
+            <View style={ms.summaryCell}>
+              <Text style={ms.summaryNum}>{summary.sessions}</Text>
+              <Text style={ms.summaryLabel}>Sessions</Text>
+            </View>
+            <View style={ms.summaryCell}>
+              <Text style={ms.summaryNum}>{summary.totalSeconds}s</Text>
+              <Text style={ms.summaryLabel}>Total Hold</Text>
+            </View>
+            <View style={ms.summaryCell}>
+              <Text style={ms.summaryNum}>{summary.avgFormScore != null ? `${summary.avgFormScore}%` : '—'}</Text>
+              <Text style={ms.summaryLabel}>Avg Form</Text>
+            </View>
+            <View style={ms.summaryCell}>
+              <Text style={ms.summaryNum}>🔥{summary.streak}</Text>
+              <Text style={ms.summaryLabel}>Day Streak</Text>
+            </View>
+          </View>
+
+          <View style={ms.focusCard}>
+            <Text style={[T.cap, { color: C.accent, fontWeight: '700', marginBottom: S.xs }]}>NEXT WEEK'S FOCUS</Text>
+            <Text style={T.body}>{nextFocus}</Text>
+          </View>
+
+          {summary.sessions === 0 && (
+            <View style={[ms.focusCard, { backgroundColor: C.goldDim, borderColor: C.gold + '44' }]}>
+              <Text style={[T.body, { color: C.gold }]}>No sessions this week — your muscles still remember. Come back stronger 💪</Text>
+            </View>
+          )}
+
+          <TouchableOpacity style={ms.closeSummaryBtn} onPress={onClose} activeOpacity={0.85}>
+            <LinearGradient colors={G.accent} style={ms.closeSummaryGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+              <Text style={[T.h4, { color: C.white }]}>Start This Week Strong</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const ms = StyleSheet.create({
+  overlay:          { ...StyleSheet.absoluteFillObject, zIndex: 999, alignItems: 'center', justifyContent: 'center' },
+  card:             { backgroundColor: C.bgCard, borderRadius: R.xxl, padding: S.xl, alignItems: 'center', marginHorizontal: S.xl, borderWidth: 1, borderColor: C.border, shadowColor: C.black, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.5, shadowRadius: 20, elevation: 16 },
+  summaryOverlay:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'flex-end' },
+  summarySheet:     { backgroundColor: C.bgCard, borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden', paddingBottom: 40 },
+  summaryHero:      { padding: S.xl, paddingTop: S.xl + 8 },
+  summaryGrid:      { flexDirection: 'row', flexWrap: 'wrap', padding: S.md, gap: S.sm },
+  summaryCell:      { flex: 1, minWidth: (width - S.md * 2 - S.sm) / 2, backgroundColor: C.bgDeep, borderRadius: R.xl, padding: S.md, alignItems: 'center', borderWidth: 1, borderColor: C.border },
+  summaryNum:       { fontSize: 28, fontWeight: '900', color: C.text },
+  summaryLabel:     { fontSize: 11, color: C.textMuted, marginTop: 2 },
+  focusCard:        { marginHorizontal: S.md, marginTop: S.sm, backgroundColor: C.accentDim, borderRadius: R.xl, padding: S.md, borderWidth: 1, borderColor: C.accent + '44' },
+  closeSummaryBtn:  { marginHorizontal: S.md, marginTop: S.lg, borderRadius: R.xl, overflow: 'hidden' },
+  closeSummaryGrad: { paddingVertical: S.md + 2, alignItems: 'center' },
+});
+
+const PurchaseContext = React.createContext(null);
+
+// Shape stored in AsyncStorage under PURCHASE_KEY:
+// { isPro: bool, trialStartedAt: ISO string | null, productId: string | null }
+const DEFAULT_PURCHASE_STATE = { isPro: false, trialStartedAt: null, productId: null };
+
+function PurchaseProvider({ children }) {
+  const [proState,       setProState]       = useState(DEFAULT_PURCHASE_STATE);
+  const [proLoaded,      setProLoaded]      = useState(false);
+  const [paywallVisible, setPaywallVisible] = useState(false);
+  const [paywallTrigger, setPaywallTrigger] = useState(null);
+  const [purchaseLoading, setPurchaseLoading] = useState(false);
+  const [sessionPaywallShown, setSessionPaywallShown] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(PURCHASE_KEY);
+        if (raw) setProState({ ...DEFAULT_PURCHASE_STATE, ...JSON.parse(raw) });
+      } catch (_) {}
+      setProLoaded(true);
+    })();
+  }, []);
+
+  const _save = async (next) => {
+    setProState(next);
+    try { await AsyncStorage.setItem(PURCHASE_KEY, JSON.stringify(next)); } catch (_) {}
+  };
+
+  // ── Derived access helpers ─────────────────────────────────────────────────
+  const isPro = () => proState.isPro;
+
+  const isInTrial = () => {
+    if (!proState.trialStartedAt) return false;
+    const ms = new Date() - new Date(proState.trialStartedAt);
+    return ms < TRIAL_DAYS * 86400000;
+  };
+
+  const trialDaysRemaining = () => {
+    if (!proState.trialStartedAt) return 0;
+    const ms = TRIAL_DAYS * 86400000 - (new Date() - new Date(proState.trialStartedAt));
+    return Math.max(0, Math.ceil(ms / 86400000));
+  };
+
+  const subscriptionExpiresAt = () => null; // populated by real payments later
+
+  const canAccessLevel     = (levelId) => levelId <= FREE_MAX_LEVEL || isPro();
+  const canPostToCommunity = () => isPro();
+
+  // ── Purchase flow (beta mock) ──────────────────────────────────────────────
+  const purchaseSubscription = async (productId) => {
+    setPurchaseLoading(true);
+    // Simulate a short network delay so the loading spinner shows
+    await new Promise(r => setTimeout(r, 800));
+    try {
+      const trialStartedAt = productId === PRODUCTS.PRO_ANNUAL.id
+        ? new Date().toISOString()
+        : null;
+      await _save({ isPro: true, trialStartedAt, productId });
+      setPaywallVisible(false);
+      Alert.alert(
+        '🎉 Welcome to Pro!',
+        'Payment coming soon! Enjoy full Pro access for free during beta.',
+      );
+      return true;
+    } finally {
+      setPurchaseLoading(false);
+    }
+  };
+
+  const restorePurchases = async () => {
+    setPurchaseLoading(true);
+    await new Promise(r => setTimeout(r, 800));
+    setPurchaseLoading(false);
+    if (proState.isPro) {
+      Alert.alert('Restore Complete', 'Your Pro access has been restored.');
+    } else {
+      Alert.alert('Nothing to Restore', 'No active subscription found on this account.');
+    }
+  };
+
+  const showPaywall = (reason = 'general', featureLabel = '') => {
+    if (sessionPaywallShown) return;
+    setPaywallTrigger({ reason, featureLabel });
+    setPaywallVisible(true);
+    setSessionPaywallShown(true);
+  };
+
+  const hidePaywall = () => setPaywallVisible(false);
+
+  return (
+    <PurchaseContext.Provider value={{
+      proLoaded,
+      isPro, isInTrial, trialDaysRemaining, subscriptionExpiresAt,
+      canAccessLevel, canPostToCommunity,
+      purchaseSubscription, restorePurchases,
+      showPaywall, hidePaywall,
+      paywallVisible, paywallTrigger, purchaseLoading,
+      FREE_MAX_LEVEL,
+    }}>
+      {children}
+      <PaywallModal />
+    </PurchaseContext.Provider>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PAYWALL MODAL
+// ─────────────────────────────────────────────────────────────────────────────
+function PaywallModal() {
+  const {
+    paywallVisible, paywallTrigger, hidePaywall,
+    purchaseSubscription, restorePurchases, purchaseLoading,
+  } = useContext(PurchaseContext);
+  const [selected, setSelected] = useState('pro_annual');
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(60)).current;
+
+  useEffect(() => {
+    if (paywallVisible) {
+      Animated.parallel([
+        Animated.timing(fadeAnim,  { toValue: 1, duration: 300, useNativeDriver: true }),
+        Animated.spring(slideAnim, { toValue: 0, tension: 60, friction: 12, useNativeDriver: true }),
+      ]).start();
+    } else {
+      fadeAnim.setValue(0);
+      slideAnim.setValue(60);
+    }
+  }, [paywallVisible]);
+
+  const PRO_FEATURES = [
+    { icon: '🏆', label: 'All 6 levels unlocked' },
+    { icon: '🤖', label: 'Unlimited AI form analysis' },
+    { icon: '📋', label: 'Personalized weekly training plan' },
+    { icon: '📊', label: 'Full progress charts & analytics' },
+    { icon: '🎥', label: 'Video recording with AI annotations' },
+    { icon: '🏅', label: 'Achievement badges & milestones' },
+    { icon: '🌐', label: 'Community posting & challenges' },
+    { icon: '📶', label: 'Offline mode' },
+  ];
+
+  const handlePurchase = async () => {
+    await purchaseSubscription(selected);
+  };
+
+  return (
+    <Modal visible={paywallVisible} transparent animationType="none" onRequestClose={hidePaywall}>
+      <Animated.View style={[pw.overlay, { opacity: fadeAnim }]}>
+        <Animated.View style={[pw.sheet, { transform: [{ translateY: slideAnim }] }]}>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 }}>
+            {/* Close */}
+            <TouchableOpacity style={pw.closeBtn} onPress={hidePaywall} activeOpacity={0.7}>
+              <Ionicons name="close" size={22} color={C.textMuted} />
+            </TouchableOpacity>
+
+            {/* Hero */}
+            <LinearGradient colors={['#1C2333', '#0D1117']} style={pw.hero}>
+              <Text style={{ fontSize: 48 }}>🤸</Text>
+              <Text style={[T.h1, { textAlign: 'center', marginTop: S.sm }]}>HandstandHub Pro</Text>
+              {paywallTrigger?.reason === 'level_lock' && (
+                <View style={pw.triggerBadge}>
+                  <Text style={[T.cap, { color: C.accent }]}>🔒 {paywallTrigger.featureLabel}</Text>
+                </View>
+              )}
+              {paywallTrigger?.reason === 'ai_limit' && (
+                <View style={pw.triggerBadge}>
+                  <Text style={[T.cap, { color: C.accent }]}>🤖 {paywallTrigger.featureLabel}</Text>
+                </View>
+              )}
+              {paywallTrigger?.reason === 'level2_complete' && (
+                <View style={[pw.triggerBadge, { backgroundColor: C.goldDim }]}>
+                  <Text style={[T.cap, { color: C.gold }]}>🎉 Ready for the next level?</Text>
+                </View>
+              )}
+            </LinearGradient>
+
+            {/* Features list */}
+            <View style={pw.featureList}>
+              {PRO_FEATURES.map(f => (
+                <View key={f.label} style={pw.featureRow}>
+                  <Text style={{ fontSize: 18, width: 28 }}>{f.icon}</Text>
+                  <Text style={[T.body, { flex: 1 }]}>{f.label}</Text>
+                  <Ionicons name="checkmark-circle" size={18} color={C.success} />
+                </View>
+              ))}
+            </View>
+
+            {/* Plan selector */}
+            <View style={pw.planRow}>
+              {/* Annual — best value */}
+              <TouchableOpacity
+                style={[pw.planCard, selected === 'pro_annual' && pw.planCardSelected]}
+                onPress={() => setSelected('pro_annual')}
+                activeOpacity={0.85}
+              >
+                <View style={pw.bestValueBadge}>
+                  <Text style={pw.bestValueText}>BEST VALUE — 50% OFF</Text>
+                </View>
+                <Text style={[T.h3, { color: selected === 'pro_annual' ? C.accent : C.text }]}>$59.99</Text>
+                <Text style={[T.cap, { color: C.textMuted }]}>per year</Text>
+                <Text style={[T.small, { color: C.success, marginTop: 4 }]}>= $5.00/mo</Text>
+                <View style={[pw.trialBadge]}>
+                  <Text style={pw.trialText}>7-DAY FREE TRIAL</Text>
+                </View>
+              </TouchableOpacity>
+
+              {/* Monthly */}
+              <TouchableOpacity
+                style={[pw.planCard, selected === 'pro_monthly' && pw.planCardSelected]}
+                onPress={() => setSelected('pro_monthly')}
+                activeOpacity={0.85}
+              >
+                <View style={{ height: 20 }} />
+                <Text style={[T.h3, { color: selected === 'pro_monthly' ? C.accent : C.text }]}>$9.99</Text>
+                <Text style={[T.cap, { color: C.textMuted }]}>per month</Text>
+                <Text style={[T.small, { color: C.textMuted, marginTop: 4 }]}>cancel anytime</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Trial notice */}
+            {selected === 'pro_annual' && (
+              <Text style={[T.small, { color: C.textMuted, textAlign: 'center', marginHorizontal: S.lg, marginTop: S.sm, lineHeight: 18 }]}>
+                Start your 7-day free trial today. No charge until the trial ends. Cancel anytime before the trial ends and you won't be charged.
+              </Text>
+            )}
+
+            {/* CTA */}
+            <TouchableOpacity
+              style={[pw.ctaBtn, purchaseLoading && { opacity: 0.7 }]}
+              onPress={handlePurchase}
+              activeOpacity={0.85}
+              disabled={purchaseLoading}
+            >
+              <LinearGradient colors={G.accent} style={pw.ctaGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                {purchaseLoading
+                  ? <ActivityIndicator color={C.white} />
+                  : <Text style={[T.h4, { color: C.white }]}>
+                      {selected === 'pro_annual' ? 'Start Free Trial' : 'Subscribe Now'}
+                    </Text>
+                }
+              </LinearGradient>
+            </TouchableOpacity>
+
+            {/* Restore */}
+            <TouchableOpacity style={{ alignItems: 'center', paddingVertical: S.md }} onPress={restorePurchases} activeOpacity={0.7}>
+              <Text style={[T.small, { color: C.textMuted }]}>Restore Purchase</Text>
+            </TouchableOpacity>
+
+            <Text style={[T.small, { color: C.textMuted, textAlign: 'center', marginHorizontal: S.xl, lineHeight: 16 }]}>
+              Subscriptions automatically renew. Manage or cancel in your App Store account settings.
+            </Text>
+          </ScrollView>
+        </Animated.View>
+      </Animated.View>
+    </Modal>
+  );
+}
+
+const pw = StyleSheet.create({
+  overlay:         { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'flex-end' },
+  sheet:           { backgroundColor: C.bgCard, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: height * 0.93, overflow: 'hidden' },
+  closeBtn:        { position: 'absolute', top: S.md, right: S.md, zIndex: 10, width: 32, height: 32, borderRadius: 16, backgroundColor: C.bgDeep, alignItems: 'center', justifyContent: 'center' },
+  hero:            { alignItems: 'center', paddingVertical: S.xl, paddingTop: S.xl + 8, paddingHorizontal: S.lg },
+  triggerBadge:    { backgroundColor: C.accentDim, paddingHorizontal: S.md, paddingVertical: S.xs, borderRadius: R.full, marginTop: S.sm },
+  featureList:     { paddingHorizontal: S.lg, paddingTop: S.md },
+  featureRow:      { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: C.border },
+  planRow:         { flexDirection: 'row', gap: S.sm, paddingHorizontal: S.lg, marginTop: S.lg },
+  planCard:        { flex: 1, backgroundColor: C.bgDeep, borderRadius: R.xl, padding: S.md, alignItems: 'center', borderWidth: 2, borderColor: C.border },
+  planCardSelected:{ borderColor: C.accent, backgroundColor: C.accentDim },
+  bestValueBadge:  { backgroundColor: C.accent, borderRadius: R.full, paddingHorizontal: S.sm, paddingVertical: 3, marginBottom: S.xs },
+  bestValueText:   { fontSize: 8, fontWeight: '800', color: C.white, letterSpacing: 0.5 },
+  trialBadge:      { backgroundColor: C.goldDim, borderRadius: R.full, paddingHorizontal: S.sm, paddingVertical: 3, marginTop: S.xs },
+  trialText:       { fontSize: 8, fontWeight: '800', color: C.gold, letterSpacing: 0.5 },
+  ctaBtn:          { marginHorizontal: S.lg, marginTop: S.lg, borderRadius: R.xl, overflow: 'hidden' },
+  ctaGrad:         { paddingVertical: S.md + 2, alignItems: 'center', justifyContent: 'center' },
+});
 
 const XP_PER_LEVEL = 500;
 
@@ -1228,6 +1774,35 @@ function UserProgressProvider({ children, onReset }) {
     return status;
   }, [notifSettings, progress.streak]);
 
+  // ── Milestone checking after every progress update ──────────────────────────
+  // MilestoneContext may not be available if provider order changes, so we
+  // safely access it and skip if not mounted yet.
+  const milestoneCtx = useContext(MilestoneContext);
+
+  useEffect(() => {
+    if (!loading && milestoneCtx?.checkMilestones) {
+      milestoneCtx.checkMilestones(progress);
+    }
+  }, [progress.submissions?.length, progress.completedLevels?.length, progress.streak]);
+
+  // ── Comeback push notification: schedule if inactive 3+ days ────────────────
+  useEffect(() => {
+    if (loading) return;
+    const lastActive = progress.lastActiveDate ? new Date(progress.lastActiveDate) : null;
+    if (!lastActive) return;
+    const daysSince = Math.floor((new Date() - lastActive) / 86400000);
+    if (daysSince >= 3 && notifSettings.enabled) {
+      const levelName = EXERCISE_LEVELS.find(l => l.id === progress.currentLevel)?.name ?? 'training';
+      Notifications.scheduleNotificationAsync({
+        content: {
+          title: 'Your muscles remember 💪',
+          body: `Pick up where you left off — ${levelName} is waiting for you.`,
+        },
+        trigger: null, // immediate
+      }).catch(() => {});
+    }
+  }, [loading]);
+
   return (
     <UserProgressContext.Provider value={{
       progress, loading,
@@ -1300,14 +1875,29 @@ function ProgressBar({ value, color = C.accent, height: h = 5, style }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SHARED: TutorialModal – YouTube embed
+// SHARED: TutorialModal – YouTube player via react-native-youtube-iframe
 // ─────────────────────────────────────────────────────────────────────────────
 function TutorialModal({ visible, exercise, onClose }) {
   const insets = useSafeAreaInsets();
+  const [playing,  setPlaying]  = useState(false);
+  const [loading,  setLoading]  = useState(true);
+  const [hasError, setHasError] = useState(false);
+
+  // Reset state each time the modal opens
+  useEffect(() => {
+    if (visible) {
+      setPlaying(false);
+      setLoading(true);
+      setHasError(false);
+    } else {
+      // Stop playback when modal closes so audio doesn't leak
+      setPlaying(false);
+    }
+  }, [visible]);
+
   if (!exercise) return null;
-  // Always include mute=1 so iOS WebKit allows autoplay (autoplay is blocked
-  // without mute on Safari/WKWebView). Users can unmute manually inside the player.
-  const url = `https://www.youtube.com/embed/${exercise.videoId}?autoplay=1&mute=1`;
+
+  const videoPlayerHeight = width * (9 / 16); // 16:9 aspect ratio
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose} statusBarTranslucent>
@@ -1329,35 +1919,119 @@ function TutorialModal({ visible, exercise, onClose }) {
           </TouchableOpacity>
         </View>
 
-        {/* YouTube embed */}
-        <WebView
-          source={{ uri: url }}
-          style={{ flex: 1, backgroundColor: C.bgDeep }}
-          startInLoadingState
-          allowsFullscreenVideo
-          mediaPlaybackRequiresUserAction={false}
-          renderLoading={() => (
-            <View style={tm.loading}>
-              <View style={tm.loadingLogo}>
-                <Ionicons name="logo-youtube" size={40} color="#FF0000" />
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 32 }}>
+          {/* Video player area */}
+          <View style={[tm.playerWrap, { height: videoPlayerHeight }]}>
+            {hasError ? (
+              /* ── Error state ── */
+              <View style={tm.errorBox}>
+                <Ionicons name="wifi-outline" size={36} color={C.textMuted} />
+                <Text style={[T.body, { color: C.textSub, marginTop: S.sm, textAlign: 'center' }]}>
+                  Video unavailable — check your connection
+                </Text>
+                <TouchableOpacity
+                  style={tm.retryBtn}
+                  onPress={() => { setHasError(false); setLoading(true); setPlaying(false); }}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="refresh-outline" size={16} color={C.white} />
+                  <Text style={[T.cap, { color: C.white, fontWeight: '700' }]}>Retry</Text>
+                </TouchableOpacity>
               </View>
-              <Text style={[T.small, { marginTop: S.md, color: C.textSub }]}>Loading tutorial…</Text>
-            </View>
-          )}
-        />
+            ) : (
+              <>
+                <YoutubePlayer
+                  height={videoPlayerHeight}
+                  videoId={exercise.videoId}
+                  play={playing}
+                  onReady={() => setLoading(false)}
+                  onError={() => { setLoading(false); setHasError(true); }}
+                  onChangeState={(state) => {
+                    if (state === 'ended') setPlaying(false);
+                  }}
+                  initialPlayerParams={{
+                    modestbranding: 1,
+                    rel: 0,
+                    controls: 1,
+                  }}
+                  webViewStyle={{ opacity: loading ? 0 : 1 }}
+                  webViewProps={{
+                    allowsFullscreenVideo: true,
+                    mediaPlaybackRequiresUserAction: false,
+                  }}
+                />
+
+                {/* Loading overlay — sits on top until onReady fires */}
+                {loading && (
+                  <View style={tm.loadingOverlay}>
+                    <View style={tm.loadingLogo}>
+                      <Ionicons name="logo-youtube" size={40} color="#FF0000" />
+                    </View>
+                    <ActivityIndicator color={C.accent} size="small" style={{ marginTop: S.md }} />
+                    <Text style={[T.small, { marginTop: S.sm, color: C.textSub }]}>Loading tutorial…</Text>
+                  </View>
+                )}
+
+                {/* Tap-to-play overlay — shown before first play */}
+                {!loading && !playing && (
+                  <TouchableOpacity
+                    style={tm.playOverlay}
+                    onPress={() => setPlaying(true)}
+                    activeOpacity={0.85}
+                  >
+                    <View style={tm.playBtn}>
+                      <Ionicons name="play" size={28} color={C.white} />
+                    </View>
+                    <Text style={[T.small, { color: C.white, marginTop: S.sm, fontWeight: '600' }]}>
+                      Tap to play
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </>
+            )}
+          </View>
+
+          {/* Exercise info below the player */}
+          <View style={tm.infoSection}>
+            <Text style={T.h3}>{exercise.name}</Text>
+            {exercise.sets && (
+              <View style={tm.setsPill}>
+                <Ionicons name="repeat-outline" size={12} color={C.accent} />
+                <Text style={[T.cap, { color: C.accent, fontWeight: '700' }]}>{exercise.sets}</Text>
+              </View>
+            )}
+            <Text style={[T.body, { marginTop: S.md, lineHeight: 22, color: C.textSub }]}>
+              {exercise.instructions || exercise.description}
+            </Text>
+            {exercise.tip && (
+              <View style={tm.tipBox}>
+                <Text style={{ fontSize: 16 }}>💡</Text>
+                <Text style={[T.small, { flex: 1, color: C.text, lineHeight: 18 }]}>{exercise.tip}</Text>
+              </View>
+            )}
+          </View>
+        </ScrollView>
       </View>
     </Modal>
   );
 }
 
 const tm = StyleSheet.create({
-  container: { flex: 1, backgroundColor: C.bgDeep },
-  header:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: S.md, paddingVertical: S.sm, backgroundColor: C.bgCard, borderBottomWidth: 1, borderBottomColor: C.border },
-  headerMid: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: S.sm },
-  backBtn:   { width: 36, height: 36, borderRadius: R.full, backgroundColor: C.bgCardAlt, alignItems: 'center', justifyContent: 'center' },
-  closeBtn:  { width: 36, height: 36, borderRadius: R.full, backgroundColor: C.bgCardAlt, alignItems: 'center', justifyContent: 'center' },
-  loading:   { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: C.bgDeep },
-  loadingLogo:{ width: 72, height: 72, borderRadius: 36, backgroundColor: C.bgCard, alignItems: 'center', justifyContent: 'center' },
+  container:      { flex: 1, backgroundColor: C.bgDeep },
+  header:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: S.md, paddingVertical: S.sm, backgroundColor: C.bgCard, borderBottomWidth: 1, borderBottomColor: C.border },
+  headerMid:      { flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: S.sm },
+  backBtn:        { width: 36, height: 36, borderRadius: R.full, backgroundColor: C.bgCardAlt, alignItems: 'center', justifyContent: 'center' },
+  closeBtn:       { width: 36, height: 36, borderRadius: R.full, backgroundColor: C.bgCardAlt, alignItems: 'center', justifyContent: 'center' },
+  playerWrap:     { backgroundColor: '#000', overflow: 'hidden' },
+  loadingOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: '#000' },
+  loadingLogo:    { width: 72, height: 72, borderRadius: 36, backgroundColor: C.bgCard, alignItems: 'center', justifyContent: 'center' },
+  playOverlay:    { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.45)' },
+  playBtn:        { width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(255,107,53,0.9)', alignItems: 'center', justifyContent: 'center', paddingLeft: 4 },
+  errorBox:       { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: C.bgCard, paddingHorizontal: S.xl },
+  retryBtn:       { flexDirection: 'row', alignItems: 'center', gap: S.xs, backgroundColor: C.accent, paddingHorizontal: S.lg, paddingVertical: S.sm, borderRadius: R.xl, marginTop: S.lg },
+  infoSection:    { padding: S.lg },
+  setsPill:       { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: S.xs },
+  tipBox:         { flexDirection: 'row', alignItems: 'flex-start', gap: S.sm, backgroundColor: C.bgCard, borderRadius: R.md, padding: S.md, borderLeftWidth: 3, borderLeftColor: C.accent, marginTop: S.lg },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1455,16 +2129,18 @@ const ec = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 // SHARED: LevelCard (Movemate style)
 // ─────────────────────────────────────────────────────────────────────────────
-function LevelCard({ level, index, isUnlocked, isCurrent, onPress }) {
+function LevelCard({ level, index, isUnlocked, isCurrent, proLocked, onPress }) {
   const entryAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.spring(entryAnim, { toValue: 1, delay: index * 80, tension: 55, friction: 11, useNativeDriver: true }).start();
   }, []);
 
+  const dimmed = !isUnlocked && !proLocked;
+
   return (
     <Animated.View style={{ opacity: entryAnim, transform: [{ translateY: entryAnim.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) }] }}>
-      <TouchableOpacity onPress={onPress} activeOpacity={isUnlocked ? 0.8 : 0.95} style={[lc.card, !isUnlocked && { opacity: 0.4 }]}>
+      <TouchableOpacity onPress={onPress} activeOpacity={0.8} style={[lc.card, dimmed && { opacity: 0.4 }, proLocked && lc.cardProLocked]}>
         {/* Big level number on right */}
         <View style={[lc.numBg, { borderLeftColor: level.color }]}>
           <Text style={[T.num, { color: level.color + '40', fontSize: 52, fontWeight: '900' }]}>{level.id}</Text>
@@ -1481,9 +2157,11 @@ function LevelCard({ level, index, isUnlocked, isCurrent, onPress }) {
               <Text style={[T.h3, { fontSize: 16 }]}>{level.name}</Text>
               <Text style={[T.cap, { marginTop: 2 }]}>{level.subtitle}</Text>
             </View>
-            {!isUnlocked
-              ? <Ionicons name="lock-closed" size={18} color={C.textMuted} />
-              : <Ionicons name="chevron-forward" size={18} color={C.textMuted} />
+            {proLocked
+              ? <View style={lc.proLockBadge}><Ionicons name="star" size={10} color={C.gold} /><Text style={lc.proLockText}>PRO</Text></View>
+              : !isUnlocked
+                ? <Ionicons name="lock-closed" size={18} color={C.textMuted} />
+                : <Ionicons name="chevron-forward" size={18} color={C.textMuted} />
             }
           </View>
 
@@ -1510,13 +2188,16 @@ function LevelCard({ level, index, isUnlocked, isCurrent, onPress }) {
 }
 
 const lc = StyleSheet.create({
-  card:      { backgroundColor: C.bgCard, borderRadius: R.xl, marginBottom: S.sm, borderWidth: 1, borderColor: C.border, overflow: 'hidden', flexDirection: 'row' },
-  left:      { flex: 1, padding: S.md },
-  numBg:     { width: 72, alignItems: 'center', justifyContent: 'center', borderLeftWidth: 1, borderLeftColor: C.border },
-  topRow:    { flexDirection: 'row', alignItems: 'center', gap: S.sm, marginBottom: S.sm },
-  iconCircle:{ width: 48, height: 48, borderRadius: R.lg, alignItems: 'center', justifyContent: 'center' },
-  metaRow:   { flexDirection: 'row', gap: S.xs, flexWrap: 'wrap' },
-  metaPill:  { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: C.bgCardAlt, paddingHorizontal: S.sm, paddingVertical: 3, borderRadius: R.full },
+  card:           { backgroundColor: C.bgCard, borderRadius: R.xl, marginBottom: S.sm, borderWidth: 1, borderColor: C.border, overflow: 'hidden', flexDirection: 'row' },
+  cardProLocked:  { borderColor: C.gold + '44', borderWidth: 1.5 },
+  left:           { flex: 1, padding: S.md },
+  numBg:          { width: 72, alignItems: 'center', justifyContent: 'center', borderLeftWidth: 1, borderLeftColor: C.border },
+  topRow:         { flexDirection: 'row', alignItems: 'center', gap: S.sm, marginBottom: S.sm },
+  iconCircle:     { width: 48, height: 48, borderRadius: R.lg, alignItems: 'center', justifyContent: 'center' },
+  metaRow:        { flexDirection: 'row', gap: S.xs, flexWrap: 'wrap' },
+  metaPill:       { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: C.bgCardAlt, paddingHorizontal: S.sm, paddingVertical: 3, borderRadius: R.full },
+  proLockBadge:   { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: C.goldDim, paddingHorizontal: 8, paddingVertical: 3, borderRadius: R.full },
+  proLockText:    { fontSize: 9, fontWeight: '800', color: C.gold, letterSpacing: 0.5 },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1649,6 +2330,8 @@ const sp = StyleSheet.create({
 function HomeScreen({ navigation }) {
   const insets  = useSafeAreaInsets();
   const { progress, getLevelProgress, completeDailyChallenge, addXP, dismissStartHere } = useContext(UserProgressContext);
+  const { buildWeeklySummary, computeForgivingStreak } = useContext(MilestoneContext);
+  const { isPro, showPaywall } = useContext(PurchaseContext);
   const fadeAnim  = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
   const [dailyExpanded, setDailyExpanded] = useState(false);
@@ -1658,12 +2341,18 @@ function HomeScreen({ navigation }) {
   const level = EXERCISE_LEVELS.find(l => l.id === Math.min(progress.currentLevel, EXERCISE_LEVELS.length)) || EXERCISE_LEVELS[0];
   const daily = getDailyChallenge(progress.currentLevel);
   const weekDays = getWeekDays();
+  const { streak: forgivingStreak, frozen } = computeForgivingStreak(progress);
 
   useFocusEffect(useCallback(() => {
     Animated.parallel([
       Animated.timing(fadeAnim,  { toValue: 1, duration: 450, useNativeDriver: true }),
       Animated.spring(slideAnim, { toValue: 0, tension: 60, friction: 10, useNativeDriver: true }),
     ]).start();
+    // Check weekly summary on Sundays
+    const now = new Date();
+    if (now.getDay() === 0 && now.getHours() >= 18) {
+      buildWeeklySummary(progress);
+    }
     return () => { fadeAnim.setValue(0); slideAnim.setValue(20); setShowExPicker(false); };
   }, []));
 
@@ -1813,7 +2502,7 @@ function HomeScreen({ navigation }) {
         {/* ── Stats row ── */}
         <Animated.View style={[ho.statsRow, { opacity: fadeAnim }]}>
           {[
-            { icon: 'flame-outline',   val: progress.streak,                label: 'Day Streak',   color: C.accent },
+            { icon: frozen ? 'snow-outline' : 'flame-outline', val: forgivingStreak, label: frozen ? 'Streak (Frozen)' : 'Day Streak', color: frozen ? '#79C0FF' : C.accent },
             { icon: 'medal-outline',   val: progress.completedLevels.length, label: 'Levels Done',  color: C.gold   },
             { icon: 'videocam-outline',val: progress.submissions.length,     label: 'Submissions',  color: '#388BFD' },
           ].map(s => (
@@ -2042,6 +2731,7 @@ const ho = StyleSheet.create({
 function LevelsScreen({ navigation }) {
   const insets   = useSafeAreaInsets();
   const { progress } = useContext(UserProgressContext);
+  const { canAccessLevel, showPaywall, isPro } = useContext(PurchaseContext);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useFocusEffect(useCallback(() => {
@@ -2050,6 +2740,20 @@ function LevelsScreen({ navigation }) {
   }, []));
 
   const total = EXERCISE_LEVELS.reduce((n, l) => n + l.exercises.length, 0);
+
+  const handleLevelPress = (level, isUnlocked) => {
+    if (!isUnlocked) {
+      // Progress-locked (not yet reached)
+      Alert.alert('Level Locked', `Complete Level ${level.id - 1} to unlock this level.`);
+      return;
+    }
+    if (!canAccessLevel(level.id)) {
+      // Pro-locked
+      showPaywall('level_lock', `Unlock Level ${level.id} — ${level.name}`);
+      return;
+    }
+    navigation.navigate('LevelDetail', { levelId: level.id });
+  };
 
   return (
     <View style={[lv.container, { paddingTop: insets.top }]}>
@@ -2070,18 +2774,20 @@ function LevelsScreen({ navigation }) {
         showsVerticalScrollIndicator={false}
       >
         {EXERCISE_LEVELS.map((level, index) => {
-          const isUnlocked = level.id === 1
+          const progressUnlocked = level.id === 1
             || progress.completedLevels.includes(level.id - 1)
             || progress.currentLevel >= level.id;
+          const proLocked  = !canAccessLevel(level.id);
           const isCurrent  = progress.currentLevel === level.id;
           return (
             <LevelCard
               key={level.id}
               level={level}
               index={index}
-              isUnlocked={isUnlocked}
+              isUnlocked={progressUnlocked && !proLocked}
               isCurrent={isCurrent}
-              onPress={() => isUnlocked ? navigation.navigate('LevelDetail', { levelId: level.id }) : null}
+              proLocked={proLocked}
+              onPress={() => handleLevelPress(level, progressUnlocked)}
             />
           );
         })}
@@ -2319,7 +3025,7 @@ function WristWarmupScreen({ route, navigation }) {
               Your wrists are warmed up and ready for handstand training. Go get it!
             </Text>
 
-            <TouchableOpacity style={[ww.nextBtn, { marginTop: S.xl }]} onPress={handleStartRecording} activeOpacity={0.85}>
+            <TouchableOpacity style={[ww.nextBtn, { marginTop: S.lg }]} onPress={handleStartRecording} activeOpacity={0.85}>
               <LinearGradient colors={G.accent} style={ww.nextGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
                 <Ionicons name="videocam" size={18} color={C.white} />
                 <Text style={[T.h4, { color: C.white, fontSize: 15 }]}>Start Recording</Text>
@@ -2360,6 +3066,7 @@ function VideoSubmissionScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
   const level  = EXERCISE_LEVELS.find(l => l.id === levelId) || EXERCISE_LEVELS[0];
   const { addSubmission } = useContext(UserProgressContext);
+  const { showPaywall } = useContext(PurchaseContext);
 
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [micPermission,    requestMicPermission]    = useMicrophonePermissions();
@@ -2499,7 +3206,9 @@ function VideoSubmissionScreen({ route, navigation }) {
           } catch (_) {
             throw new Error('Invalid AI response format');
           }
-          if (isMountedRef.current) setAiResult(result);
+          if (isMountedRef.current) {
+            setAiResult(result);
+          }
         } finally {
           clearTimeout(timeoutId);
         }
@@ -2907,10 +3616,12 @@ const STAGES = [
 function SubmissionReviewScreen({ route, navigation }) {
   const { levelId = 1, aiVerified = false,
           formFeedback = [], starRating = null, formScore = null,
+          duration = 15,
         } = route.params || {};
   const insets   = useSafeAreaInsets();
   const level    = EXERCISE_LEVELS.find(l => l.id === levelId) || EXERCISE_LEVELS[0];
   const { addXP, progress, completeLevelWithXP } = useContext(UserProgressContext);
+  const { showPaywall, isPro } = useContext(PurchaseContext);
   const baseXP   = 50;
   const bonusXP  = aiVerified ? 10 : 0;
   const totalXP  = baseXP + bonusXP;
@@ -2999,7 +3710,7 @@ function SubmissionReviewScreen({ route, navigation }) {
           <Text style={{ fontSize: 16 }}>{level.icon}</Text>
           <Text style={[T.small, { color: level.color, fontWeight: '700' }]}>{level.name}</Text>
         </View>
-        <Text style={T.small}>5-second practice clip captured</Text>
+        <Text style={T.small}>{duration}s practice clip captured</Text>
       </View>
 
       {/* Processing stages */}
@@ -3072,9 +3783,9 @@ function SubmissionReviewScreen({ route, navigation }) {
           {/* Info cards */}
           <View style={sv.infoRow}>
             {[
-              { icon: 'time-outline',     label: 'Review Time', val: '24–48 hrs'  },
-              { icon: 'videocam-outline', label: 'Clip Length', val: '5 seconds'  },
-              { icon: 'trophy-outline',   label: 'Level',       val: `#${levelId}` },
+              { icon: 'time-outline',     label: 'Review Time', val: '24–48 hrs'      },
+              { icon: 'videocam-outline', label: 'Clip Length', val: `${duration}s`   },
+              { icon: 'trophy-outline',   label: 'Level',       val: `#${levelId}`    },
             ].map(item => (
               <View key={item.label} style={sv.infoCard}>
                 <Ionicons name={item.icon} size={16} color={C.accent} />
@@ -3113,6 +3824,10 @@ function SubmissionReviewScreen({ route, navigation }) {
                   Vibration.vibrate(30);
                   completeLevelWithXP(levelId, level.xpReward);
                   setLevelJustDone(true);
+                  // After completing Level 2, celebrate then offer Pro upgrade
+                  if (levelId === FREE_MAX_LEVEL && !isPro()) {
+                    setTimeout(() => showPaywall('level2_complete', ''), 1200);
+                  }
                 }}
               >
                 <LinearGradient colors={G.success} style={sv.completeLevelGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
@@ -3234,6 +3949,7 @@ function ProfileScreen() {
   const { authUser, isAuthenticated, signOut, updateDisplayName,
           updatePassword, deleteAccount, userId,
         } = useContext(AuthContext);
+  const { isPro, isInTrial, trialDaysRemaining, subscriptionExpiresAt, showPaywall } = useContext(PurchaseContext);
 
   const [editVisible,      setEditVisible]      = useState(false);
   const [nameInput,        setNameInput]        = useState('');
@@ -3383,10 +4099,41 @@ function ProfileScreen() {
         {/* Header */}
         <Animated.View style={[pf.header, { opacity: fadeAnim }]}>
           <Text style={T.h1}>My Account</Text>
-          <TouchableOpacity style={pf.editIcon} onPress={openEdit}>
-            <Ionicons name="pencil-outline" size={18} color={C.accent} />
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: S.sm, alignItems: 'center' }}>
+            <TouchableOpacity style={pf.editIcon} onPress={openEdit}>
+              <Ionicons name="pencil-outline" size={18} color={C.accent} />
+            </TouchableOpacity>
+          </View>
         </Animated.View>
+
+        {/* Pro status banner */}
+        {isPro() ? (
+          <Animated.View style={[{ opacity: fadeAnim, marginHorizontal: S.md, marginBottom: S.sm }]}>
+            <LinearGradient colors={G.accent} style={pf.proBanner} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+              <Ionicons name="star" size={16} color={C.white} />
+              <Text style={[T.cap, { color: C.white, fontWeight: '700', flex: 1 }]}>
+                {isInTrial() ? 'Pro Trial Active' : 'HandstandHub Pro'}
+              </Text>
+              <Text style={[T.small, { color: 'rgba(255,255,255,0.75)' }]}>
+                {isInTrial()
+                  ? `Trial ends in ${trialDaysRemaining()} day${trialDaysRemaining() !== 1 ? 's' : ''}`
+                  : subscriptionExpiresAt()
+                    ? `Renews ${new Date(subscriptionExpiresAt()).toLocaleDateString()}`
+                    : 'Active'}
+              </Text>
+            </LinearGradient>
+          </Animated.View>
+        ) : (
+          <Animated.View style={[{ opacity: fadeAnim, marginHorizontal: S.md, marginBottom: S.sm }]}>
+            <TouchableOpacity onPress={() => showPaywall('general', '')} activeOpacity={0.85}>
+              <View style={pf.upgradeRow}>
+                <Ionicons name="star-outline" size={16} color={C.gold} />
+                <Text style={[T.cap, { color: C.gold, flex: 1 }]}>Free plan · Upgrade to Pro for all features</Text>
+                <Ionicons name="chevron-forward" size={14} color={C.gold} />
+              </View>
+            </TouchableOpacity>
+          </Animated.View>
+        )}
 
         {/* Avatar hero */}
         <Animated.View style={[pf.avatarSection, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
@@ -3882,6 +4629,8 @@ const pf = StyleSheet.create({
   syncChip:       { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: S.xs, paddingHorizontal: S.sm, paddingVertical: 4, borderRadius: R.full, borderWidth: 1 },
   accountRow:     { flexDirection: 'row', alignItems: 'center', gap: S.sm, backgroundColor: C.bgCard, borderRadius: R.lg, padding: S.md, borderWidth: 1, borderColor: C.border },
   accountIcon:    { width: 34, height: 34, borderRadius: R.lg, backgroundColor: C.accentDim, alignItems: 'center', justifyContent: 'center' },
+  proBanner:      { flexDirection: 'row', alignItems: 'center', gap: S.sm, paddingHorizontal: S.md, paddingVertical: S.sm, borderRadius: R.lg },
+  upgradeRow:     { flexDirection: 'row', alignItems: 'center', gap: S.sm, backgroundColor: C.goldDim, paddingHorizontal: S.md, paddingVertical: S.sm, borderRadius: R.lg, borderWidth: 1, borderColor: C.gold + '33' },
   resetBtn:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: S.sm, backgroundColor: C.errorDim, borderRadius: R.lg, paddingVertical: S.md, borderWidth: 1, borderColor: C.error + '40' },
   toast:          { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: S.xs, backgroundColor: C.success, paddingHorizontal: S.lg, paddingVertical: S.sm, borderRadius: R.full, elevation: 8, shadowColor: C.black, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 6 },
   // Notification styles
@@ -5183,6 +5932,10 @@ const NAV_THEME = {
 
 function CustomTabBar({ state, descriptors, navigation }) {
   const insets = useSafeAreaInsets();
+  const { isPro, showPaywall } = useContext(PurchaseContext);
+
+  // Plan and Progress tabs are Pro-only features
+  const PRO_TABS = new Set(['Plan', 'Progress']);
 
   return (
     <View style={[tb.bar, { paddingBottom: insets.bottom > 0 ? insets.bottom : S.md }]}>
@@ -5190,6 +5943,7 @@ function CustomTabBar({ state, descriptors, navigation }) {
         const { options } = descriptors[route.key];
         const label = options.tabBarLabel ?? route.name;
         const isFocused = state.index === index;
+        const isProTab  = PRO_TABS.has(route.name) && !isPro();
 
         const iconName = {
           Home:     isFocused ? 'home'         : 'home-outline',
@@ -5200,6 +5954,10 @@ function CustomTabBar({ state, descriptors, navigation }) {
         }[route.name];
 
         const onPress = () => {
+          if (isProTab) {
+            showPaywall('feature', `${label} — Pro feature`);
+            return;
+          }
           const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
           if (!isFocused && !event.defaultPrevented) navigation.navigate(route.name);
         };
@@ -5213,7 +5971,14 @@ function CustomTabBar({ state, descriptors, navigation }) {
               </LinearGradient>
             ) : (
               <View style={tb.inactiveItem}>
-                <Ionicons name={iconName} size={22} color={C.textMuted} />
+                <View style={{ position: 'relative' }}>
+                  <Ionicons name={iconName} size={22} color={isProTab ? C.textMuted : C.textMuted} style={isProTab && { opacity: 0.5 }} />
+                  {isProTab && (
+                    <View style={tb.proTabDot}>
+                      <Text style={{ fontSize: 7, color: C.gold, fontWeight: '900' }}>★</Text>
+                    </View>
+                  )}
+                </View>
               </View>
             )}
           </TouchableOpacity>
@@ -5224,11 +5989,12 @@ function CustomTabBar({ state, descriptors, navigation }) {
 }
 
 const tb = StyleSheet.create({
-  bar:        { flexDirection: 'row', backgroundColor: C.bgDeep, borderTopWidth: 1, borderTopColor: C.border, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: S.sm, paddingHorizontal: S.md, gap: S.xs },
-  tabItem:    { flex: 1, alignItems: 'center' },
-  activePill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: S.md, paddingVertical: S.sm, borderRadius: R.full },
-  activeLabel:{ fontSize: 12, fontWeight: '700', color: C.white },
+  bar:         { flexDirection: 'row', backgroundColor: C.bgDeep, borderTopWidth: 1, borderTopColor: C.border, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: S.sm, paddingHorizontal: S.md, gap: S.xs },
+  tabItem:     { flex: 1, alignItems: 'center' },
+  activePill:  { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: S.md, paddingVertical: S.sm, borderRadius: R.full },
+  activeLabel: { fontSize: 12, fontWeight: '700', color: C.white },
   inactiveItem:{ paddingVertical: S.sm, paddingHorizontal: S.md, alignItems: 'center' },
+  proTabDot:   { position: 'absolute', top: -3, right: -4, width: 13, height: 13, borderRadius: 7, backgroundColor: C.goldDim, borderWidth: 1, borderColor: C.gold + '66', alignItems: 'center', justifyContent: 'center' },
 });
 
 function HomeTabs() {
@@ -5287,9 +6053,13 @@ function AuthApp({ onAuthSuccess, onSkip }) {
         <Stack.Screen name="ForgotPassword"  component={ForgotPasswordScreen} />
         <Stack.Screen name="AppOnboarding">
           {() => (
-            <UserProgressProvider>
-              <OnboardingScreen onComplete={onSkip} />
-            </UserProgressProvider>
+            <PurchaseProvider>
+              <MilestoneProvider>
+                <UserProgressProvider>
+                  <OnboardingScreen onComplete={onSkip} />
+                </UserProgressProvider>
+              </MilestoneProvider>
+            </PurchaseProvider>
           )}
         </Stack.Screen>
       </Stack.Navigator>
@@ -5311,20 +6081,28 @@ function AuthStateGate({ onboardingDone, onboardingChecked, checkOnboarding, set
   // Authenticated + onboarding done → main app
   if (isAuthenticated && onboardingDone) {
     return (
-      <UserProgressProvider onReset={checkOnboarding}>
-        <MainApp />
-      </UserProgressProvider>
+      <PurchaseProvider>
+        <MilestoneProvider>
+          <UserProgressProvider onReset={checkOnboarding}>
+            <MainApp />
+          </UserProgressProvider>
+        </MilestoneProvider>
+      </PurchaseProvider>
     );
   }
   // Authenticated but onboarding not done → onboarding
   if (isAuthenticated && !onboardingDone) {
     return (
-      <UserProgressProvider>
-        <OnboardingScreen onComplete={(refresh) => {
-          if (refresh) refresh();
-          setOnboardingDone(true);
-        }} />
-      </UserProgressProvider>
+      <PurchaseProvider>
+        <MilestoneProvider>
+          <UserProgressProvider>
+            <OnboardingScreen onComplete={(refresh) => {
+              if (refresh) refresh();
+              setOnboardingDone(true);
+            }} />
+          </UserProgressProvider>
+        </MilestoneProvider>
+      </PurchaseProvider>
     );
   }
   // Not authenticated → show auth flow
