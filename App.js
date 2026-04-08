@@ -26,6 +26,7 @@ import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   Animated, Dimensions, Platform, Share, Linking, Modal,
   ActivityIndicator, TextInput, KeyboardAvoidingView, Vibration, Alert,
+  Image, ImageBackground,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import YoutubePlayer from 'react-native-youtube-iframe';
@@ -41,7 +42,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import NetInfo from '@react-native-community/netinfo';
 import { createClient } from '@supabase/supabase-js';
-import * as SecureStore from 'expo-secure-store';
 
 const { width, height } = Dimensions.get('window');
 
@@ -49,54 +49,74 @@ const { width, height } = Dimensions.get('window');
 // THEME — must be defined first; everything else in the file depends on these
 // ─────────────────────────────────────────────────────────────────────────────
 const C = {
-  bg:          '#161B22',
-  bgCard:      '#1C2333',
-  bgCardAlt:   '#242C3D',
-  bgDeep:      '#0D1117',
-  bgElevated:  '#21262D',
-  accent:      '#FF6B35',
-  accentLight: '#FF8C5A',
-  accentDim:   'rgba(255,107,53,0.15)',
-  gold:        '#F4C430',
-  goldDim:     'rgba(244,196,48,0.15)',
-  text:        '#FFFFFF',
-  textSub:     '#8B949E',
-  textMuted:   '#6E7681',
-  border:      '#30363D',
-  borderLight: '#3D444D',
-  success:     '#3FB950',
-  successDim:  'rgba(63,185,80,0.15)',
-  error:       '#F85149',
-  errorDim:    'rgba(248,81,73,0.15)',
-  white:       '#FFFFFF',
-  black:       '#000000',
-  overlay:     'rgba(0,0,0,0.75)',
+  bg:               '#0A0A0B',
+  bgCard:           '#16171A',
+  bgCardAlt:        '#1C1D21',  // alias — used by other screens
+  bgCardElevated:   '#1C1D21',
+  bgDeep:           '#000000',
+  bgElevated:       '#1C1D21',
+
+  // Electric lime — new primary accent
+  accent:           '#D7FF3D',
+  accentDark:       '#A8CC2E',
+  accentGlow:       'rgba(215,255,61,0.25)',
+  accentDim:        'rgba(215,255,61,0.12)',
+
+  // Legacy orange — kept so other screens don't break
+  accentOrange:     '#FF6B35',
+  accentLight:      '#FF8C5A',
+
+  red:              '#FF453A',
+  redLight:         '#FF6259',
+  redDim:           'rgba(255,69,58,0.12)',
+
+  gold:             '#FF6B35',
+  goldDim:          'rgba(255,107,53,0.12)',
+
+  text:             '#FFFFFF',
+  textSub:          '#8A8B91',
+  textMuted:        '#5A5B61',
+
+  border:           '#26272B',
+  borderLight:      '#2F3036',
+
+  success:          '#3FB950',
+  successDim:       'rgba(63,185,80,0.12)',
+  error:            '#FF453A',
+  errorDim:         'rgba(255,69,58,0.12)',
+
+  white:            '#FFFFFF',
+  black:            '#000000',
+  overlay:          'rgba(0,0,0,0.85)',
 };
 
 const G = {
-  accent:   ['#FF6B35', '#E8521C'],
-  accentH:  ['#FF8C5A', '#FF6B35'],
-  gold:     ['#F4C430', '#D4A017'],
-  success:  ['#3FB950', '#2EA043'],
-  dark:     ['#1C2333', '#161B22'],
-  hero:     ['rgba(255,107,53,0.85)', 'rgba(232,82,28,0.6)'],
-  cardOver: ['transparent', 'rgba(13,17,23,0.95)'],
-  splash:   ['#0D1117', '#161B22', '#1C2333'],
+  accent:    ['#D7FF3D', '#A8CC2E'],
+  accentAlt: ['#D7FF3D', '#A8CC2E'],
+  accentH:   ['#D7FF3D', '#A8CC2E'],
+  red:       ['#FF6259', '#FF453A'],
+  gold:      ['#FF6B35', '#FF6B35'],
+  success:   ['#3FB950', '#3FB950'],
+  dark:      ['#141414', '#000000'],
+  hero:      ['rgba(0,0,0,0)', 'rgba(0,0,0,0.95)'],
+  cardOver:  ['transparent', 'rgba(0,0,0,0.95)'],
+  splash:    ['#000000', '#0A0A0A', '#141414'],
+  card:      ['#1C1C1C', '#141414'],
 };
 
 const S = { xs: 4, sm: 8, md: 16, lg: 24, xl: 32, xxl: 48 };
-const R = { sm: 8, md: 12, lg: 16, xl: 20, xxl: 28, full: 9999 };
+const R = { sm: 8, md: 12, lg: 16, xl: 20, xxl: 28, full: 999 };
 
 const T = {
-  h1:    { fontSize: 28, fontWeight: '900', letterSpacing: -0.5, color: C.text },
-  h2:    { fontSize: 22, fontWeight: '900', letterSpacing: -0.3, color: C.text },
-  h3:    { fontSize: 18, fontWeight: '800', color: C.text },
-  h4:    { fontSize: 15, fontWeight: '700', color: C.text },
-  body:  { fontSize: 14, fontWeight: '400', lineHeight: 21, color: C.textSub },
+  h1:    { fontSize: 36, fontWeight: '900', letterSpacing: -0.5, color: C.text },
+  h2:    { fontSize: 28, fontWeight: '900', letterSpacing: -0.5, color: C.text },
+  h3:    { fontSize: 20, fontWeight: '800', letterSpacing: -0.3, color: C.text },
+  h4:    { fontSize: 16, fontWeight: '700', color: C.text },
+  body:  { fontSize: 15, fontWeight: '400', lineHeight: 22, color: C.textSub },
   small: { fontSize: 12, fontWeight: '400', lineHeight: 18, color: C.textSub },
-  label: { fontSize: 10, fontWeight: '700', letterSpacing: 1.5, textTransform: 'uppercase', color: C.textMuted },
-  cap:   { fontSize: 11, fontWeight: '500', color: C.textMuted },
-  num:   { fontSize: 32, fontWeight: '900', letterSpacing: -1, color: C.text },
+  label: { fontSize: 11, fontWeight: '700', letterSpacing: 1.5, textTransform: 'uppercase', color: C.textMuted },
+  cap:   { fontSize: 11, fontWeight: '600', color: C.textMuted },
+  num:   { fontSize: 40, fontWeight: '900', letterSpacing: -1.5, color: C.text },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -290,12 +310,11 @@ const PURCHASE_KEY = '@handstandai_purchases';
 const TRIAL_DAYS   = 7;
 
 const PRODUCTS = {
-  PRO_MONTHLY: { id: 'pro_monthly', label: 'Pro Monthly', price: '$9.99', period: '/month',  priceNum: 9.99  },
+  PRO_MONTHLY: { id: 'pro_monthly', label: 'Pro Monthly', price: '$9.99', period: '/month',  priceNum: 9.99,  trialDays: 7 },
   PRO_ANNUAL:  { id: 'pro_annual',  label: 'Pro Annual',  price: '$59.99', period: '/year',  priceNum: 59.99, trialDays: 7 },
 };
 
-const FREE_MAX_LEVEL     = 2;   // levels 1-2 free, 3+ require Pro
-const FREE_WORKOUTS_WEEK = 3;   // max guided workouts per week on free plan
+const FREE_MAX_LEVEL = 2;   // levels 1-2 free, 3+ require Pro
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RETENTION — MILESTONES & FORGIVING STREAKS
@@ -489,8 +508,8 @@ function WeeklySummaryModal({ summary, visible, onClose }) {
       <View style={ms.summaryOverlay}>
         <View style={ms.summarySheet}>
           <LinearGradient colors={G.accent} style={ms.summaryHero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-            <Text style={[T.label, { color: 'rgba(255,255,255,0.8)', letterSpacing: 2 }]}>WEEKLY SUMMARY</Text>
-            <Text style={[T.h1, { color: C.white, marginTop: S.xs }]}>This Week</Text>
+            <Text style={[T.label, { color: 'rgba(0,0,0,0.6)', letterSpacing: 2 }]}>WEEKLY SUMMARY</Text>
+            <Text style={[T.h1, { color: C.black, marginTop: S.xs }]}>This Week</Text>
           </LinearGradient>
 
           <View style={ms.summaryGrid}>
@@ -518,14 +537,14 @@ function WeeklySummaryModal({ summary, visible, onClose }) {
           </View>
 
           {summary.sessions === 0 && (
-            <View style={[ms.focusCard, { backgroundColor: C.goldDim, borderColor: C.gold + '44' }]}>
-              <Text style={[T.body, { color: C.gold }]}>No sessions this week — your muscles still remember. Come back stronger 💪</Text>
+            <View style={[ms.focusCard, { backgroundColor: C.bgCardElevated, borderColor: C.border }]}>
+              <Text style={[T.body, { color: C.textSub }]}>No sessions this week — your muscles still remember. Come back stronger 💪</Text>
             </View>
           )}
 
           <TouchableOpacity style={ms.closeSummaryBtn} onPress={onClose} activeOpacity={0.85}>
             <LinearGradient colors={G.accent} style={ms.closeSummaryGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-              <Text style={[T.h4, { color: C.white }]}>Start This Week Strong</Text>
+              <Text style={[T.h4, { color: C.black, fontWeight: '900' }]}>Start This Week Strong</Text>
             </LinearGradient>
           </TouchableOpacity>
         </View>
@@ -604,9 +623,8 @@ function PurchaseProvider({ children }) {
     // Simulate a short network delay so the loading spinner shows
     await new Promise(r => setTimeout(r, 800));
     try {
-      const trialStartedAt = productId === PRODUCTS.PRO_ANNUAL.id
-        ? new Date().toISOString()
-        : null;
+      // Both monthly and annual now include a 7-day free trial
+      const trialStartedAt = new Date().toISOString();
       await _save({ isPro: true, trialStartedAt, productId });
       setPaywallVisible(false);
       Alert.alert(
@@ -680,14 +698,11 @@ function PaywallModal() {
   }, [paywallVisible]);
 
   const PRO_FEATURES = [
-    { icon: '🏆', label: 'All 6 levels unlocked' },
-    { icon: '🤖', label: 'Unlimited AI form analysis' },
-    { icon: '📋', label: 'Personalized weekly training plan' },
-    { icon: '📊', label: 'Full progress charts & analytics' },
-    { icon: '🎥', label: 'Video recording with AI annotations' },
-    { icon: '🏅', label: 'Achievement badges & milestones' },
-    { icon: '🌐', label: 'Community posting & challenges' },
-    { icon: '📶', label: 'Offline mode' },
+    { icon: 'videocam-outline',    text: 'AI Form Analysis & Coaching' },
+    { icon: 'infinite-outline',    text: 'Unlimited Level Access' },
+    { icon: 'calendar-outline',    text: 'Weekly Training Plans' },
+    { icon: 'stats-chart-outline', text: 'Progress Tracking & Charts' },
+    { icon: 'trophy-outline',      text: 'Achievement Badges' },
   ];
 
   const handlePurchase = async () => {
@@ -705,9 +720,12 @@ function PaywallModal() {
             </TouchableOpacity>
 
             {/* Hero */}
-            <LinearGradient colors={['#1C2333', '#0D1117']} style={pw.hero}>
-              <Text style={{ fontSize: 48 }}>🤸</Text>
-              <Text style={[T.h1, { textAlign: 'center', marginTop: S.sm }]}>HandstandHub Pro</Text>
+            <View style={pw.hero}>
+              <View style={pw.heroIconCircle}>
+                <Ionicons name="star" size={64} color={C.accent} />
+              </View>
+              <Text style={[T.h1, { textAlign: 'center', marginTop: S.md, fontSize: 36, fontWeight: '900', textTransform: 'uppercase' }]}>GO PRO</Text>
+              <Text style={[T.label, { color: C.textSub, textAlign: 'center', marginTop: S.xs }]}>UNLOCK YOUR FULL POTENTIAL</Text>
               {paywallTrigger?.reason === 'level_lock' && (
                 <View style={pw.triggerBadge}>
                   <Text style={[T.cap, { color: C.accent }]}>🔒 {paywallTrigger.featureLabel}</Text>
@@ -719,19 +737,24 @@ function PaywallModal() {
                 </View>
               )}
               {paywallTrigger?.reason === 'level2_complete' && (
-                <View style={[pw.triggerBadge, { backgroundColor: C.goldDim }]}>
-                  <Text style={[T.cap, { color: C.gold }]}>🎉 Ready for the next level?</Text>
+                <View style={pw.triggerBadge}>
+                  <Text style={[T.cap, { color: C.accent }]}>🎉 Ready for the next level?</Text>
                 </View>
               )}
-            </LinearGradient>
+            </View>
 
             {/* Features list */}
             <View style={pw.featureList}>
               {PRO_FEATURES.map(f => (
-                <View key={f.label} style={pw.featureRow}>
-                  <Text style={{ fontSize: 18, width: 28 }}>{f.icon}</Text>
-                  <Text style={[T.body, { flex: 1 }]}>{f.label}</Text>
-                  <Ionicons name="checkmark-circle" size={18} color={C.success} />
+                <View key={f.text} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                  {/* lime check circle */}
+                  <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' }}>
+                    <Ionicons name="checkmark" size={13} color={C.black} />
+                  </View>
+                  {/* feature icon */}
+                  <Ionicons name={f.icon} size={16} color={C.accent} />
+                  {/* text */}
+                  <Text style={{ flex: 1, fontSize: 14, fontWeight: '500', color: C.white }}>{f.text}</Text>
                 </View>
               ))}
             </View>
@@ -745,12 +768,12 @@ function PaywallModal() {
                 activeOpacity={0.85}
               >
                 <View style={pw.bestValueBadge}>
-                  <Text style={pw.bestValueText}>BEST VALUE — 50% OFF</Text>
+                  <Text style={pw.bestValueText}>BEST VALUE · 50% OFF</Text>
                 </View>
-                <Text style={[T.h3, { color: selected === 'pro_annual' ? C.accent : C.text }]}>$59.99</Text>
+                <Text style={[T.num, { color: selected === 'pro_annual' ? C.accent : C.text, fontSize: 26, fontWeight: '900' }]}>$59.99</Text>
                 <Text style={[T.cap, { color: C.textMuted }]}>per year</Text>
-                <Text style={[T.small, { color: C.success, marginTop: 4 }]}>= $5.00/mo</Text>
-                <View style={[pw.trialBadge]}>
+                <Text style={[T.small, { color: C.accent, marginTop: 4, fontWeight: '700' }]}>= $5.00/mo</Text>
+                <View style={pw.trialBadge}>
                   <Text style={pw.trialText}>7-DAY FREE TRIAL</Text>
                 </View>
               </TouchableOpacity>
@@ -762,18 +785,19 @@ function PaywallModal() {
                 activeOpacity={0.85}
               >
                 <View style={{ height: 20 }} />
-                <Text style={[T.h3, { color: selected === 'pro_monthly' ? C.accent : C.text }]}>$9.99</Text>
+                <Text style={[T.num, { color: selected === 'pro_monthly' ? C.accent : C.text, fontSize: 26, fontWeight: '900' }]}>$9.99</Text>
                 <Text style={[T.cap, { color: C.textMuted }]}>per month</Text>
                 <Text style={[T.small, { color: C.textMuted, marginTop: 4 }]}>cancel anytime</Text>
+                <View style={pw.trialBadge}>
+                  <Text style={pw.trialText}>7-DAY FREE TRIAL</Text>
+                </View>
               </TouchableOpacity>
             </View>
 
-            {/* Trial notice */}
-            {selected === 'pro_annual' && (
-              <Text style={[T.small, { color: C.textMuted, textAlign: 'center', marginHorizontal: S.lg, marginTop: S.sm, lineHeight: 18 }]}>
-                Start your 7-day free trial today. No charge until the trial ends. Cancel anytime before the trial ends and you won't be charged.
-              </Text>
-            )}
+            {/* Trial notice — shown for both plans */}
+            <Text style={[T.small, { color: C.textMuted, textAlign: 'center', marginHorizontal: S.lg, marginTop: S.sm, lineHeight: 18 }]}>
+              Start your 7-day free trial today. No charge until the trial ends. Cancel anytime before the trial ends and you won't be charged.
+            </Text>
 
             {/* CTA */}
             <TouchableOpacity
@@ -784,17 +808,18 @@ function PaywallModal() {
             >
               <LinearGradient colors={G.accent} style={pw.ctaGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
                 {purchaseLoading
-                  ? <ActivityIndicator color={C.white} />
-                  : <Text style={[T.h4, { color: C.white }]}>
-                      {selected === 'pro_annual' ? 'Start Free Trial' : 'Subscribe Now'}
-                    </Text>
+                  ? <ActivityIndicator color={C.black} />
+                  : <Text style={[T.h4, { color: C.black, fontWeight: '900', textTransform: 'uppercase' }]}>Start Free Trial</Text>
                 }
               </LinearGradient>
             </TouchableOpacity>
 
-            {/* Restore */}
-            <TouchableOpacity style={{ alignItems: 'center', paddingVertical: S.md }} onPress={restorePurchases} activeOpacity={0.7}>
-              <Text style={[T.small, { color: C.textMuted }]}>Restore Purchase</Text>
+            {/* Restore + Terms */}
+            <TouchableOpacity style={{ alignItems: 'center', paddingVertical: S.sm }} onPress={restorePurchases} activeOpacity={0.7}>
+              <Text style={[T.small, { color: C.textMuted }]}>Restore Purchases</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={{ alignItems: 'center', paddingBottom: S.sm }} activeOpacity={0.7}>
+              <Text style={[T.small, { color: C.textMuted }]}>Terms &amp; Privacy</Text>
             </TouchableOpacity>
 
             <Text style={[T.small, { color: C.textMuted, textAlign: 'center', marginHorizontal: S.xl, lineHeight: 16 }]}>
@@ -808,22 +833,24 @@ function PaywallModal() {
 }
 
 const pw = StyleSheet.create({
-  overlay:         { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'flex-end' },
+  overlay:         { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'flex-end' },
   sheet:           { backgroundColor: C.bgCard, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: height * 0.93, overflow: 'hidden' },
-  closeBtn:        { position: 'absolute', top: S.md, right: S.md, zIndex: 10, width: 32, height: 32, borderRadius: 16, backgroundColor: C.bgDeep, alignItems: 'center', justifyContent: 'center' },
+  closeBtn:        { position: 'absolute', top: S.md, right: S.md, zIndex: 10, width: 32, height: 32, borderRadius: 16, backgroundColor: C.bgCardElevated, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.border },
   hero:            { alignItems: 'center', paddingVertical: S.xl, paddingTop: S.xl + 8, paddingHorizontal: S.lg },
-  triggerBadge:    { backgroundColor: C.accentDim, paddingHorizontal: S.md, paddingVertical: S.xs, borderRadius: R.full, marginTop: S.sm },
+  heroIconCircle:  { width: 100, height: 100, borderRadius: 50, backgroundColor: C.accentDim, borderWidth: 1, borderColor: C.accent + '44', alignItems: 'center', justifyContent: 'center', shadowColor: C.accent, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.4, shadowRadius: 20, elevation: 8 },
+  triggerBadge:    { backgroundColor: C.accentDim, paddingHorizontal: S.md, paddingVertical: S.xs, borderRadius: R.full, marginTop: S.sm, borderWidth: 1, borderColor: C.accent + '44' },
   featureList:     { paddingHorizontal: S.lg, paddingTop: S.md },
-  featureRow:      { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: C.border },
+  featureRow:      { flexDirection: 'row', alignItems: 'center', gap: S.sm, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.border },
+  featureCheck:    { width: 24, height: 24, borderRadius: 12, backgroundColor: C.accentDim, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.accent + '44' },
   planRow:         { flexDirection: 'row', gap: S.sm, paddingHorizontal: S.lg, marginTop: S.lg },
-  planCard:        { flex: 1, backgroundColor: C.bgDeep, borderRadius: R.xl, padding: S.md, alignItems: 'center', borderWidth: 2, borderColor: C.border },
+  planCard:        { flex: 1, backgroundColor: C.bgCardElevated, borderRadius: R.xl, padding: S.md, alignItems: 'center', borderWidth: 2, borderColor: C.border },
   planCardSelected:{ borderColor: C.accent, backgroundColor: C.accentDim },
   bestValueBadge:  { backgroundColor: C.accent, borderRadius: R.full, paddingHorizontal: S.sm, paddingVertical: 3, marginBottom: S.xs },
-  bestValueText:   { fontSize: 8, fontWeight: '800', color: C.white, letterSpacing: 0.5 },
-  trialBadge:      { backgroundColor: C.goldDim, borderRadius: R.full, paddingHorizontal: S.sm, paddingVertical: 3, marginTop: S.xs },
-  trialText:       { fontSize: 8, fontWeight: '800', color: C.gold, letterSpacing: 0.5 },
-  ctaBtn:          { marginHorizontal: S.lg, marginTop: S.lg, borderRadius: R.xl, overflow: 'hidden' },
-  ctaGrad:         { paddingVertical: S.md + 2, alignItems: 'center', justifyContent: 'center' },
+  bestValueText:   { fontSize: 8, fontWeight: '800', color: C.black, letterSpacing: 0.5 },
+  trialBadge:      { backgroundColor: C.accentDim, borderRadius: R.full, paddingHorizontal: S.sm, paddingVertical: 3, marginTop: S.xs, borderWidth: 1, borderColor: C.accent + '44' },
+  trialText:       { fontSize: 8, fontWeight: '800', color: C.accent, letterSpacing: 0.5 },
+  ctaBtn:          { marginHorizontal: S.lg, marginTop: S.lg, borderRadius: R.full, overflow: 'hidden', shadowColor: C.accent, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 6 },
+  ctaGrad:         { height: 56, alignItems: 'center', justifyContent: 'center' },
 });
 
 const XP_PER_LEVEL = 500;
@@ -1214,10 +1241,10 @@ function OfflineBanner() {
       <View style={{
         flexDirection: 'row', alignItems: 'center', gap: S.sm,
         backgroundColor: C.bgDeep, paddingHorizontal: S.md, paddingVertical: S.sm,
-        borderBottomWidth: 1, borderBottomColor: C.gold + '44',
+        borderBottomWidth: 1, borderBottomColor: C.border,
       }}>
-        <Ionicons name="cloud-offline-outline" size={14} color={C.gold} />
-        <Text style={[T.cap, { color: C.gold, flex: 1, fontWeight: '700' }]}>
+        <Ionicons name="cloud-offline-outline" size={14} color={C.textSub} />
+        <Text style={[T.cap, { color: C.textSub, flex: 1, fontWeight: '700' }]}>
           You're offline — training features still work. AI checks will queue.
         </Text>
       </View>
@@ -1262,23 +1289,6 @@ async function processAIQueue(onResult) {
     }
   }
   try { await AsyncStorage.setItem(AI_QUEUE_KEY, JSON.stringify(remaining)); } catch (_) {}
-}
-
-// Hook to process queued AI checks when coming back online
-function useAIQueueProcessor(onResult) {
-  const { isOnline } = useContext(OfflineContext);
-  const wasOffline   = useRef(false);
-
-  useEffect(() => {
-    if (!isOnline) {
-      wasOffline.current = true;
-      return;
-    }
-    if (wasOffline.current) {
-      wasOffline.current = false;
-      processAIQueue(onResult);
-    }
-  }, [isOnline, onResult]);
 }
 
 const DEFAULT_NOTIF_SETTINGS = {
@@ -1934,8 +1944,8 @@ function TutorialModal({ visible, exercise, onClose }) {
                   onPress={() => { setHasError(false); setLoading(true); setPlaying(false); }}
                   activeOpacity={0.8}
                 >
-                  <Ionicons name="refresh-outline" size={16} color={C.white} />
-                  <Text style={[T.cap, { color: C.white, fontWeight: '700' }]}>Retry</Text>
+                  <Ionicons name="refresh-outline" size={16} color={C.black} />
+                  <Text style={[T.cap, { color: C.black, fontWeight: '800' }]}>Retry</Text>
                 </TouchableOpacity>
               </View>
             ) : (
@@ -2026,7 +2036,7 @@ const tm = StyleSheet.create({
   loadingOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: '#000' },
   loadingLogo:    { width: 72, height: 72, borderRadius: 36, backgroundColor: C.bgCard, alignItems: 'center', justifyContent: 'center' },
   playOverlay:    { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.45)' },
-  playBtn:        { width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(255,107,53,0.9)', alignItems: 'center', justifyContent: 'center', paddingLeft: 4 },
+  playBtn:        { width: 64, height: 64, borderRadius: 32, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center', paddingLeft: 4 },
   errorBox:       { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: C.bgCard, paddingHorizontal: S.xl },
   retryBtn:       { flexDirection: 'row', alignItems: 'center', gap: S.xs, backgroundColor: C.accent, paddingHorizontal: S.lg, paddingVertical: S.sm, borderRadius: R.xl, marginTop: S.lg },
   infoSection:    { padding: S.lg },
@@ -2060,19 +2070,19 @@ function ExerciseCard({ exercise, levelColor, index }) {
       }}>
         <View style={ec.card}>
           {/* Left accent bar */}
-          <View style={[ec.accentBar, { backgroundColor: levelColor }]} />
+          <View style={[ec.accentBar, { backgroundColor: C.accent }]} />
 
           <View style={{ flex: 1 }}>
             {/* Header row */}
             <TouchableOpacity onPress={() => setExpanded(e => !e)} activeOpacity={0.8} style={ec.header}>
-              <View style={[ec.emojiWrap, { backgroundColor: levelColor + '20' }]}>
+              <View style={[ec.emojiWrap, { backgroundColor: C.accentDim }]}>
                 <Text style={{ fontSize: 22 }}>{exercise.emoji}</Text>
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[T.h4, { fontSize: 14 }]}>{exercise.name}</Text>
                 <View style={ec.setsPill}>
-                  <Ionicons name="repeat-outline" size={10} color={levelColor} />
-                  <Text style={[T.cap, { color: levelColor, fontWeight: '700' }]}>{exercise.sets}</Text>
+                  <Ionicons name="repeat-outline" size={10} color={C.accent} />
+                  <Text style={[T.cap, { color: C.accent, fontWeight: '700' }]}>{exercise.sets}</Text>
                 </View>
               </View>
               <View style={[ec.chevronWrap, expanded && { backgroundColor: C.accent + '20' }]}>
@@ -2131,56 +2141,97 @@ const ec = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 function LevelCard({ level, index, isUnlocked, isCurrent, proLocked, onPress }) {
   const entryAnim = useRef(new Animated.Value(0)).current;
+  const isCompleted = false; // future: check progress.completedLevels.includes(level.id)
+  const locked = !isUnlocked;
 
   useEffect(() => {
     Animated.spring(entryAnim, { toValue: 1, delay: index * 80, tension: 55, friction: 11, useNativeDriver: true }).start();
   }, []);
 
-  const dimmed = !isUnlocked && !proLocked;
-
   return (
     <Animated.View style={{ opacity: entryAnim, transform: [{ translateY: entryAnim.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) }] }}>
-      <TouchableOpacity onPress={onPress} activeOpacity={0.8} style={[lc.card, dimmed && { opacity: 0.4 }, proLocked && lc.cardProLocked]}>
-        {/* Big level number on right */}
-        <View style={[lc.numBg, { borderLeftColor: level.color }]}>
-          <Text style={[T.num, { color: level.color + '40', fontSize: 52, fontWeight: '900' }]}>{level.id}</Text>
-        </View>
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={0.85}
+        style={[lc.card, locked && { opacity: 0.45 }, isCurrent && lc.cardActive]}
+      >
+        {/* Subtle inner sheen */}
+        <LinearGradient
+          colors={['rgba(255,255,255,0.04)', 'transparent']}
+          style={StyleSheet.absoluteFill}
+          start={{ x: 0, y: 0 }} end={{ x: 0, y: 0.5 }}
+          pointerEvents="none"
+        />
 
-        {/* Left content */}
-        <View style={lc.left}>
-          <View style={lc.topRow}>
-            <View style={[lc.iconCircle, { backgroundColor: level.color + '20' }]}>
-              <Text style={{ fontSize: 26 }}>{level.icon}</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[T.label, { color: level.color }]}>LEVEL {level.id}</Text>
-              <Text style={[T.h3, { fontSize: 16 }]}>{level.name}</Text>
-              <Text style={[T.cap, { marginTop: 2 }]}>{level.subtitle}</Text>
-            </View>
-            {proLocked
-              ? <View style={lc.proLockBadge}><Ionicons name="star" size={10} color={C.gold} /><Text style={lc.proLockText}>PRO</Text></View>
-              : !isUnlocked
-                ? <Ionicons name="lock-closed" size={18} color={C.textMuted} />
-                : <Ionicons name="chevron-forward" size={18} color={C.textMuted} />
-            }
-          </View>
-
-          <View style={lc.metaRow}>
-            <View style={lc.metaPill}>
-              <Ionicons name="barbell-outline" size={11} color={C.textMuted} />
-              <Text style={T.cap}>{level.exercises.length} exercises</Text>
-            </View>
-            <View style={[lc.metaPill, { backgroundColor: C.goldDim }]}>
-              <Ionicons name="star" size={11} color={C.gold} />
-              <Text style={[T.cap, { color: C.gold }]}>+{level.xpReward} XP</Text>
-            </View>
-            {isCurrent && (
-              <View style={[lc.metaPill, { backgroundColor: level.color + '20' }]}>
-                <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: level.color }} />
-                <Text style={[T.cap, { color: level.color, fontWeight: '700' }]}>Active</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {/* LEFT: 3D badge */}
+          <View style={lc.badgeWrap}>
+            {/* Back glow */}
+            <View style={[lc.badgeLayer, locked
+              ? { width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(255,255,255,0.03)' }
+              : lc.badgeBack]}
+            />
+            {/* Mid ring */}
+            <View style={[lc.badgeLayer, locked
+              ? { width: 70, height: 70, borderRadius: 35, backgroundColor: 'rgba(255,255,255,0.05)' }
+              : lc.badgeMid]}
+            />
+            {/* Front face */}
+            {locked ? (
+              <View style={lc.badgeFrontLocked}>
+                <Ionicons name={proLocked ? 'star' : 'lock-closed'} size={24} color={C.textMuted} />
+              </View>
+            ) : (
+              <LinearGradient
+                colors={['#D7FF3D', '#A8CC2E']}
+                style={lc.badgeFront}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              >
+                <Text style={lc.badgeNum}>{level.id}</Text>
+              </LinearGradient>
+            )}
+            {/* Completed checkmark badge */}
+            {isCompleted && (
+              <View style={lc.checkBadge}>
+                <Ionicons name="checkmark" size={9} color={C.black} />
               </View>
             )}
           </View>
+
+          {/* RIGHT: text */}
+          <View style={{ flex: 1, marginLeft: 16 }}>
+            <Text style={lc.levelLabel}>LEVEL {level.id}</Text>
+            <Text style={lc.levelName}>{level.name.toUpperCase()}</Text>
+            <Text style={lc.levelSub}>{level.subtitle}</Text>
+
+            <View style={lc.pillRow}>
+              <View style={lc.pill}>
+                <Ionicons name="barbell-outline" size={10} color={C.textMuted} />
+                <Text style={lc.pillText}>{level.exercises.length} EXERCISES</Text>
+              </View>
+              <View style={lc.pill}>
+                <Ionicons name="flash-outline" size={10} color={C.textMuted} />
+                <Text style={lc.pillText}>+{level.xpReward} XP</Text>
+              </View>
+              {isCurrent && (
+                <View style={lc.activePill}>
+                  <View style={lc.activeDot} />
+                  <Text style={lc.activeText}>ACTIVE</Text>
+                </View>
+              )}
+              {proLocked && (
+                <View style={lc.proPill}>
+                  <Text style={lc.proText}>PRO</Text>
+                </View>
+              )}
+            </View>
+          </View>
+
+          <Ionicons
+            name={locked ? (proLocked ? 'star-outline' : 'lock-closed') : 'chevron-forward'}
+            size={16}
+            color={locked ? C.textMuted : C.textMuted}
+          />
         </View>
       </TouchableOpacity>
     </Animated.View>
@@ -2188,16 +2239,32 @@ function LevelCard({ level, index, isUnlocked, isCurrent, proLocked, onPress }) 
 }
 
 const lc = StyleSheet.create({
-  card:           { backgroundColor: C.bgCard, borderRadius: R.xl, marginBottom: S.sm, borderWidth: 1, borderColor: C.border, overflow: 'hidden', flexDirection: 'row' },
-  cardProLocked:  { borderColor: C.gold + '44', borderWidth: 1.5 },
-  left:           { flex: 1, padding: S.md },
-  numBg:          { width: 72, alignItems: 'center', justifyContent: 'center', borderLeftWidth: 1, borderLeftColor: C.border },
-  topRow:         { flexDirection: 'row', alignItems: 'center', gap: S.sm, marginBottom: S.sm },
-  iconCircle:     { width: 48, height: 48, borderRadius: R.lg, alignItems: 'center', justifyContent: 'center' },
-  metaRow:        { flexDirection: 'row', gap: S.xs, flexWrap: 'wrap' },
-  metaPill:       { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: C.bgCardAlt, paddingHorizontal: S.sm, paddingVertical: 3, borderRadius: R.full },
-  proLockBadge:   { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: C.goldDim, paddingHorizontal: 8, paddingVertical: 3, borderRadius: R.full },
-  proLockText:    { fontSize: 9, fontWeight: '800', color: C.gold, letterSpacing: 0.5 },
+  card:           { backgroundColor: C.bgCard, borderRadius: R.xl, marginBottom: 16, borderWidth: 1, borderColor: C.border, padding: 20, overflow: 'hidden',
+                    shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 8 },
+  cardActive:     { borderColor: C.accent + '55' },
+  // badge layers
+  badgeWrap:      { width: 70, height: 70, alignItems: 'center', justifyContent: 'center' },
+  badgeLayer:     { position: 'absolute' },
+  badgeBack:      { width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(215,255,61,0.15)',
+                    shadowColor: '#D7FF3D', shadowOpacity: 0.4, shadowRadius: 16, shadowOffset: { width: 0, height: 0 }, elevation: 0 },
+  badgeMid:       { width: 70, height: 70, borderRadius: 35, backgroundColor: 'rgba(215,255,61,0.25)' },
+  badgeFront:     { width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center' },
+  badgeFrontLocked:{ width: 58, height: 58, borderRadius: 29, backgroundColor: C.bgCardAlt, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.border },
+  badgeNum:       { fontSize: 24, fontWeight: '900', color: C.black, letterSpacing: -0.5 },
+  checkBadge:     { position: 'absolute', top: 0, right: 0, width: 18, height: 18, borderRadius: 9, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' },
+  // text
+  levelLabel:     { fontSize: 10, fontWeight: '700', letterSpacing: 1.5, textTransform: 'uppercase', color: C.textMuted },
+  levelName:      { fontSize: 20, fontWeight: '900', color: C.white, letterSpacing: -0.3, marginTop: 3 },
+  levelSub:       { fontSize: 13, fontWeight: '500', color: C.textMuted, marginTop: 3, marginBottom: 10 },
+  // pills
+  pillRow:        { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
+  pill:           { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: C.bgCardAlt, paddingHorizontal: 8, paddingVertical: 4, borderRadius: R.full },
+  pillText:       { fontSize: 9, fontWeight: '700', letterSpacing: 0.8, color: C.textMuted },
+  activePill:     { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: C.accentDim, paddingHorizontal: 8, paddingVertical: 4, borderRadius: R.full, borderWidth: 1, borderColor: C.accent + '44' },
+  activeDot:      { width: 5, height: 5, borderRadius: 3, backgroundColor: C.accent },
+  activeText:     { fontSize: 9, fontWeight: '800', letterSpacing: 1, color: C.accent },
+  proPill:        { backgroundColor: C.bgCardAlt, paddingHorizontal: 8, paddingVertical: 4, borderRadius: R.full, borderWidth: 1, borderColor: C.borderLight },
+  proText:        { fontSize: 9, fontWeight: '800', letterSpacing: 1, color: C.textMuted },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2240,7 +2307,7 @@ function StageRow({ stage, isActive, isComplete, delay }) {
             : <Ionicons name={stage.icon} size={15} color={C.textMuted} />
         }
       </View>
-      <Text style={[T.small, isComplete && { color: C.text }, isActive && { color: C.accentLight, fontWeight: '700' }]}>
+      <Text style={[T.small, isComplete && { color: C.text }, isActive && { color: C.accent, fontWeight: '700' }]}>
         {stage.label}
       </Text>
       {isComplete && <Ionicons name="checkmark-circle" size={14} color={C.success} style={{ marginLeft: 'auto' }} />}
@@ -2304,9 +2371,9 @@ function SplashScreen({ visible }) {
 
       <Animated.View style={[sp.glowRing, { opacity: glowAnim }]} />
       <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-        <LinearGradient colors={G.accent} style={sp.logoBg} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+        <View style={sp.logoBg}>
           <Text style={{ fontSize: 52 }}>🤸</Text>
-        </LinearGradient>
+        </View>
       </Animated.View>
 
       <Text style={sp.appName}>HandstandHub</Text>
@@ -2317,7 +2384,7 @@ function SplashScreen({ visible }) {
 
 const sp = StyleSheet.create({
   container: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: C.bg, zIndex: 999 },
-  logoBg:    { width: 100, height: 100, borderRadius: 32, alignItems: 'center', justifyContent: 'center', shadowColor: C.accent, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.7, shadowRadius: 24, elevation: 12 },
+  logoBg:    { width: 100, height: 100, borderRadius: 32, backgroundColor: C.accentDim, borderWidth: 1, borderColor: C.accent + '44', alignItems: 'center', justifyContent: 'center', shadowColor: C.accent, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 24, elevation: 12 },
   glowRing:  { position: 'absolute', width: 140, height: 140, borderRadius: 70, borderWidth: 2, borderColor: C.accent + '55', shadowColor: C.accent, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 20 },
   appName:   { fontSize: 32, fontWeight: '900', color: C.text, letterSpacing: -0.5, marginTop: 28 },
   circle1:   { position: 'absolute', width: 300, height: 300, borderRadius: 150, backgroundColor: C.accent + '06', top: -80, right: -80 },
@@ -2331,7 +2398,6 @@ function HomeScreen({ navigation }) {
   const insets  = useSafeAreaInsets();
   const { progress, getLevelProgress, completeDailyChallenge, addXP, dismissStartHere } = useContext(UserProgressContext);
   const { buildWeeklySummary, computeForgivingStreak } = useContext(MilestoneContext);
-  const { isPro, showPaywall } = useContext(PurchaseContext);
   const fadeAnim  = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
   const [dailyExpanded, setDailyExpanded] = useState(false);
@@ -2376,248 +2442,218 @@ function HomeScreen({ navigation }) {
     ? progress.userName.trim().split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
     : null;
 
+  const firstName = progress.userName ? progress.userName.split(' ')[0].toUpperCase() : 'ATHLETE';
+  const btnScale  = useRef(new Animated.Value(1)).current;
+
+  const pressBtnIn  = () => Animated.spring(btnScale, { toValue: 0.96, useNativeDriver: true }).start();
+  const pressBtnOut = () => Animated.spring(btnScale, { toValue: 1, friction: 4, useNativeDriver: true }).start();
+
+  // Weekly bars: 7 items SUN→SAT, today's bar is lime, trained days are dim lit
+  const today = new Date().getDay(); // 0=Sun
+  const BAR_DAYS = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+  const barData = BAR_DAYS.map((label, i) => {
+    const trained = progress.submissions.some(s => new Date(s.date).getDay() === i);
+    return { label, isToday: i === today, trained };
+  });
+
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
+
+      {/* ── Ambient background layers (behind everything) ── */}
+      {/* Layer 1: base gradient */}
+      <LinearGradient
+        colors={['#0A0A0B', '#0F1014', '#0A0A0B']}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+      />
+      {/* Layer 2: lime glow top-right */}
+      <View style={amb.glowTopRight} pointerEvents="none" />
+      {/* Layer 3: lime glow bottom-left */}
+      <View style={amb.glowBottomLeft} pointerEvents="none" />
+      {/* Layer 4: grain overlay */}
+      <View style={amb.grain} pointerEvents="none" />
+
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: 32 }}
+        contentContainerStyle={{ paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}
       >
-        {/* ── Top bar ── */}
-        <Animated.View style={[ho.topBar, { paddingTop: insets.top + S.sm, opacity: fadeAnim }]}>
-          <View>
-            <Text style={[T.cap, { color: C.textMuted }]}>Good {getGreeting()}</Text>
-            <Text style={[T.h2, { fontSize: 20 }]}>
-              {progress.userName ? progress.userName.split(' ')[0] : 'Athlete'} 👋
-            </Text>
+
+        {/* ── 1. HEADER ROW ── */}
+        <Animated.View style={[hd.header, { paddingTop: insets.top + 16, opacity: fadeAnim }]}>
+          <TouchableOpacity onPress={() => navigation.navigate('Profile')} style={hd.avatarWrap}>
+            <Text style={hd.avatarText}>{initials || '🤸'}</Text>
+          </TouchableOpacity>
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={hd.welcomeLabel}>WELCOME BACK,</Text>
+            <Text style={hd.welcomeName}>{firstName}</Text>
           </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: S.sm }}>
-            <TouchableOpacity style={ho.notifBtn} onPress={() => {}}>
-              <Ionicons name="notifications-outline" size={20} color={C.text} />
-              <View style={ho.notifDot} />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => navigation.navigate('Profile')}>
-              <LinearGradient colors={G.accent} style={ho.avatarCircle} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-                {initials
-                  ? <Text style={ho.avatarText}>{initials}</Text>
-                  : <Text style={{ fontSize: 18 }}>🤸</Text>
-                }
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity style={hd.notifBtn} onPress={() => {}}>
+            <Ionicons name="notifications-outline" size={20} color={C.textSub} />
+            <View style={hd.notifDot} />
+          </TouchableOpacity>
         </Animated.View>
 
-        {/* ── Week day strip ── */}
-        <Animated.View style={[ho.weekRow, { opacity: fadeAnim }]}>
-          {weekDays.map((d, i) => {
-            // A day is "trained" if any submission was recorded on that date
-            const trained = progress.submissions.some(
-              s => new Date(s.date).toDateString() === d.dateStr
-            );
-            return (
-              <View key={i} style={ho.dayCol}>
-                <Text style={[T.cap, (d.isToday || trained) && { color: d.isToday ? C.accent : C.success }]}>
-                  {d.label}
-                </Text>
-                <View style={[
-                  ho.dayCircle,
-                  d.isToday  && ho.dayCircleActive,
-                  trained && !d.isToday && { backgroundColor: C.success + '30', borderWidth: 1, borderColor: C.success + '66' },
-                ]}>
-                  <Text style={[T.cap, { fontWeight: '700', color: d.isToday ? C.white : trained ? C.success : C.textMuted }]}>
-                    {d.day}
-                  </Text>
-                </View>
-                {/* Active dot: orange for today, green check for past trained days */}
-                {d.isToday  && <View style={ho.dayDot} />}
-                {trained && !d.isToday && (
-                  <Ionicons name="checkmark" size={8} color={C.success} />
-                )}
-              </View>
-            );
-          })}
+        {/* ── 2. STATS ROW ── */}
+        <Animated.View style={[hd.statsRow, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+          {[
+            { icon: frozen ? 'snow-outline' : 'footsteps-outline', val: forgivingStreak, label: 'DAY STREAK' },
+            { icon: 'flash-outline', val: progress.xp, label: 'TOTAL XP' },
+            { icon: 'trophy-outline', val: progress.currentLevel, label: 'LEVEL' },
+          ].map((s, i) => (
+            <View key={s.label} style={hd.statCard}>
+              <Ionicons name={s.icon} size={24} color={C.accent} />
+              <Text style={hd.statNum}>{s.val}</Text>
+              <Text style={hd.statLabel}>{s.label}</Text>
+            </View>
+          ))}
         </Animated.View>
 
-        {/* ── Level hero card ── */}
-        <Animated.View style={[ho.heroCard, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-          <LinearGradient
-            colors={[level.color + '30', C.bgCard]}
-            style={StyleSheet.absoluteFill}
-            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-          />
-          <View style={ho.heroTop}>
-            <View style={{ flex: 1 }}>
-              <Text style={[T.label, { color: level.color, marginBottom: 4 }]}>CURRENT LEVEL</Text>
-              <Text style={[T.h2, { fontSize: 24, marginBottom: 2 }]}>{level.name}</Text>
-              <Text style={[T.small, { color: C.textSub }]}>{level.subtitle}</Text>
-            </View>
-            <View style={[ho.heroBadge, { backgroundColor: level.color + '20' }]}>
-              <Text style={{ fontSize: 32, marginBottom: 2 }}>{level.icon}</Text>
-              <Text style={[T.num, { fontSize: 28, color: level.color }]}>{level.id}</Text>
-            </View>
-          </View>
-
-          <View style={{ marginTop: S.md }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: S.xs }}>
-              <Text style={[T.small, { color: C.textSub }]}>
-                <Text style={{ color: C.gold, fontWeight: '700' }}>{progress.xp}</Text> / {XP_PER_LEVEL} XP
+        {/* ── 3. WEEKLY ACTIVITY CARD ── */}
+        <Animated.View style={[hd.card, { marginTop: 24, opacity: fadeAnim }]}>
+          <View style={hd.cardHeaderRow}>
+            <Text style={hd.cardLabel}>THIS WEEK</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={hd.cardLabel}>WEEKLY GOAL</Text>
+              <Text style={[hd.cardLabel, { color: C.accent }]}>
+                {barData.filter(d => d.trained).length}/7 DAYS
               </Text>
-              <Text style={T.cap}>{Math.round(getLevelProgress() * 100)}%</Text>
             </View>
-            <ProgressBar value={getLevelProgress()} color={level.color} height={6} />
           </View>
+          <View style={hd.barsRow}>
+            {barData.map((d, i) => (
+              <View key={i} style={hd.barCol}>
+                <View style={hd.barTrack}>
+                  <View style={[
+                    hd.barFill,
+                    d.isToday  && { backgroundColor: C.accent, height: '75%' },
+                    d.trained && !d.isToday && { backgroundColor: C.borderLight, height: '50%' },
+                    !d.trained && !d.isToday && { height: '20%' },
+                  ]} />
+                </View>
+                <Text style={[hd.barLabel, d.isToday && { color: C.white }]}>{d.label}</Text>
+              </View>
+            ))}
+          </View>
+        </Animated.View>
+
+        {/* ── 4. CURRENT LEVEL CARD ── */}
+        <Animated.View style={[hd.card, { marginTop: 16, opacity: fadeAnim }]}>
+          <Text style={hd.cardLabel}>CURRENT LEVEL</Text>
+          <Text style={hd.levelName}>{level.name.toUpperCase()}</Text>
+          <Text style={[T.small, { color: C.textMuted, marginBottom: 12, marginTop: 2 }]}>{level.subtitle}</Text>
+          <View style={hd.progressTrack}>
+            <View style={[hd.progressFill, { width: `${Math.round(getLevelProgress() * 100)}%` }]} />
+          </View>
+          <Text style={[hd.cardLabel, { marginTop: 8, letterSpacing: 0.5 }]}>
+            {progress.xp} / {XP_PER_LEVEL} XP TO NEXT LEVEL
+          </Text>
+        </Animated.View>
+
+        {/* ── 5. PRIMARY CTA ── */}
+        <Animated.View style={[{ marginTop: 24, marginHorizontal: 20 }, { opacity: fadeAnim }, { transform: [{ scale: btnScale }] }]}>
+          <TouchableOpacity
+            onPressIn={pressBtnIn}
+            onPressOut={pressBtnOut}
+            onPress={() => setShowExPicker(true)}
+            activeOpacity={1}
+            style={hd.ctaBtn}
+          >
+            <Text style={hd.ctaText}>START TODAY'S TRAINING</Text>
+            <View style={hd.ctaArrow}>
+              <Ionicons name="arrow-forward" size={20} color={C.accent} />
+            </View>
+          </TouchableOpacity>
         </Animated.View>
 
         {/* ── Start Here banner (shown until dismissed) ── */}
         {!progress.startHereDismissed && (
-          <Animated.View style={[ho.startHereBanner, { opacity: fadeAnim }]}>
+          <Animated.View style={[hd.startBanner, { opacity: fadeAnim }]}>
             <View style={{ flex: 1 }}>
-              <Text style={[T.label, { color: C.accent, marginBottom: 3 }]}>👋 NEW TO HANDSTANDS?</Text>
+              <Text style={[T.label, { color: C.accent, marginBottom: 3 }]}>NEW TO HANDSTANDS?</Text>
               <Text style={[T.h4, { fontSize: 13, marginBottom: 2 }]}>Start with Level 1 – Beginner</Text>
-              <Text style={[T.cap, { lineHeight: 15 }]}>
-                Build your hollow body, wall walks, and pike hold before anything else.
-              </Text>
+              <Text style={[T.small, { lineHeight: 16 }]}>Build your hollow body, wall walks, and pike hold first.</Text>
             </View>
-            <View style={ho.startHereActions}>
+            <View style={{ alignItems: 'flex-end', gap: 6 }}>
               <TouchableOpacity
-                style={ho.startHereBtn}
+                style={hd.startBannerBtn}
                 activeOpacity={0.85}
-                onPress={() => {
-                  dismissStartHere();
-                  navigation.navigate('Levels');
-                }}
+                onPress={() => { dismissStartHere(); navigation.navigate('Levels'); }}
               >
-                <LinearGradient colors={G.accent} style={ho.startHereGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                  <Text style={[T.cap, { color: C.white, fontWeight: '800' }]}>Go to Level 1</Text>
-                  <Ionicons name="arrow-forward" size={12} color={C.white} />
-                </LinearGradient>
+                <Text style={[T.cap, { color: C.black, fontWeight: '800' }]}>Go to Level 1</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={dismissStartHere} style={ho.startHereDismiss}>
+              <TouchableOpacity onPress={dismissStartHere}>
                 <Ionicons name="close" size={16} color={C.textMuted} />
               </TouchableOpacity>
             </View>
           </Animated.View>
         )}
 
-        {/* ── Stats row ── */}
-        <Animated.View style={[ho.statsRow, { opacity: fadeAnim }]}>
-          {[
-            { icon: frozen ? 'snow-outline' : 'flame-outline', val: forgivingStreak, label: frozen ? 'Streak (Frozen)' : 'Day Streak', color: frozen ? '#79C0FF' : C.accent },
-            { icon: 'medal-outline',   val: progress.completedLevels.length, label: 'Levels Done',  color: C.gold   },
-            { icon: 'videocam-outline',val: progress.submissions.length,     label: 'Submissions',  color: '#388BFD' },
-          ].map(s => (
-            <View key={s.label} style={ho.statCard}>
-              <View style={[ho.statIconWrap, { backgroundColor: s.color + '18' }]}>
-                <Ionicons name={s.icon} size={18} color={s.color} />
-              </View>
-              <Text style={[T.num, { fontSize: 28, marginTop: S.xs }]}>{s.val}</Text>
-              <Text style={[T.cap, { marginTop: 2, textAlign: 'center' }]}>{s.label}</Text>
-            </View>
-          ))}
-        </Animated.View>
-
         {/* ── Daily challenge ── */}
-        <Animated.View style={[ho.section, { opacity: fadeAnim }]}>
-          <View style={ho.sectionHeader}>
-            <Text style={T.h4}>Daily Challenge</Text>
-            <View style={ho.goldPill}>
-              <Text style={[T.cap, { color: C.gold, fontWeight: '700' }]}>+{daily.xp} XP</Text>
-            </View>
+        <Animated.View style={[hd.card, { marginTop: 24, opacity: fadeAnim }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+            <Text style={hd.cardLabel}>DAILY CHALLENGE</Text>
+            <Text style={[hd.cardLabel, { color: C.accent }]}>+{daily.xp} XP</Text>
           </View>
 
-          <View style={[ho.dailyCard, progress.dailyChallengeCompleted && { borderColor: C.success + '55' }]}>
-            {/* Orange left bar */}
-            <View style={[ho.dailyBar, progress.dailyChallengeCompleted && { backgroundColor: C.success }]} />
+          <TouchableOpacity onPress={() => setDailyExpanded(e => !e)} activeOpacity={0.8}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <Text style={{ fontSize: 28 }}>{daily.icon}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={[T.h4, { fontSize: 15 }]}>{daily.exercise.name}</Text>
+                <Text style={T.small}>{daily.exercise.sets}</Text>
+              </View>
+              <Ionicons name={dailyExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={C.textMuted} />
+            </View>
+          </TouchableOpacity>
 
-            <View style={{ flex: 1 }}>
-              <TouchableOpacity onPress={() => setDailyExpanded(e => !e)} activeOpacity={0.8} style={ho.dailyTop}>
-                <Text style={{ fontSize: 26 }}>{daily.icon}</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={[T.label, { color: C.accent, marginBottom: 2 }]}>TODAY'S EXERCISE</Text>
-                  <Text style={[T.h4, { fontSize: 14 }]}>{daily.exercise.name}</Text>
-                  <Text style={T.cap}>{daily.exercise.sets}</Text>
-                </View>
-                <View style={[ho.chevron, dailyExpanded && { backgroundColor: C.accentDim }]}>
-                  <Ionicons name={dailyExpanded ? 'chevron-up' : 'chevron-down'} size={15} color={C.accent} />
-                </View>
-              </TouchableOpacity>
-
-              <Text style={[T.small, { marginTop: S.xs }]}>{daily.exercise.description}</Text>
-
-              {dailyExpanded && (
-                <View style={{ marginTop: S.sm }}>
-                  <View style={ho.dailyDivider} />
-                  <Text style={[T.label, { marginBottom: S.sm }]}>HOW TO DO IT</Text>
-                  <Text style={[T.body, { marginBottom: S.sm, lineHeight: 20 }]}>{daily.exercise.instructions}</Text>
-                  {daily.exercise.tip && (
-                    <View style={ho.tipRow}>
-                      <Text style={{ fontSize: 13 }}>💡</Text>
-                      <Text style={[T.small, { flex: 1, color: C.text }]}>{daily.exercise.tip}</Text>
-                    </View>
-                  )}
+          {dailyExpanded && (
+            <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: C.border }}>
+              <Text style={[T.body, { marginBottom: 10 }]}>{daily.exercise.instructions}</Text>
+              {daily.exercise.tip && (
+                <View style={hd.tipRow}>
+                  <Text style={{ fontSize: 13 }}>💡</Text>
+                  <Text style={[T.small, { flex: 1, color: C.text }]}>{daily.exercise.tip}</Text>
                 </View>
               )}
-
-              <View style={ho.dailyFooter}>
-                {progress.dailyChallengeCompleted ? (
-                  <View style={ho.doneRow}>
-                    <Ionicons name="checkmark-circle" size={15} color={C.success} />
-                    <Text style={[T.small, { color: C.success, fontWeight: '700' }]}>Completed today!</Text>
-                  </View>
-                ) : (
-                  <TouchableOpacity onPress={handleDaily} style={ho.completeBtn} activeOpacity={0.85}>
-                    <LinearGradient colors={G.gold} style={ho.completeBtnGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                      <Ionicons name="checkmark" size={14} color={C.bgDeep} />
-                      <Text style={[T.small, { color: C.bgDeep, fontWeight: '800' }]}>Mark Complete · +{daily.xp} XP</Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                )}
-              </View>
             </View>
-          </View>
-        </Animated.View>
+          )}
 
-        {/* ── Quick actions ── */}
-        <Animated.View style={[ho.section, { opacity: fadeAnim }]}>
-          <Text style={[T.h4, { marginBottom: S.sm }]}>Quick Actions</Text>
-          <View style={ho.actionsRow}>
-            {/* Record – orange gradient */}
-            <TouchableOpacity style={ho.actionBig} onPress={() => setShowExPicker(true)} activeOpacity={0.85}>
-              <LinearGradient colors={G.accent} style={ho.actionGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-                <Ionicons name="videocam" size={26} color={C.white} />
-                <Text style={[T.h4, { color: C.white, textAlign: 'center', marginTop: 4, fontSize: 13 }]}>Record{'\n'}Practice</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-            {/* Exercises – dark */}
-            <TouchableOpacity style={ho.actionBig} onPress={() => navigation.navigate('Levels')} activeOpacity={0.85}>
-              <View style={ho.actionDark}>
-                <Ionicons name="barbell-outline" size={26} color={C.accent} />
-                <Text style={[T.h4, { color: C.accent, textAlign: 'center', marginTop: 4, fontSize: 13 }]}>View{'\n'}Exercises</Text>
+          <View style={{ marginTop: 16 }}>
+            {progress.dailyChallengeCompleted ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Ionicons name="checkmark-circle" size={16} color={C.success} />
+                <Text style={[T.small, { color: C.success, fontWeight: '700' }]}>Completed today!</Text>
               </View>
-            </TouchableOpacity>
+            ) : (
+              <TouchableOpacity onPress={handleDaily} style={hd.dailyCompleteBtn} activeOpacity={0.85}>
+                <Ionicons name="checkmark" size={15} color={C.black} />
+                <Text style={[T.cap, { color: C.black, fontWeight: '900', fontSize: 12 }]}>MARK COMPLETE · +{daily.xp} XP</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </Animated.View>
 
         {/* ── Recent activity ── */}
         {progress.submissions.length > 0 && (
-          <Animated.View style={[ho.section, { opacity: fadeAnim }]}>
-            <Text style={[T.h4, { marginBottom: S.sm }]}>Recent Activity</Text>
+          <Animated.View style={[hd.card, { marginTop: 16, opacity: fadeAnim }]}>
+            <Text style={[hd.cardLabel, { marginBottom: 14 }]}>RECENT ACTIVITY</Text>
             {progress.submissions.slice(0, 3).map((sub, i) => (
-              <View key={sub.id || i} style={ho.activityRow}>
-                <View style={[ho.actDot, { backgroundColor: sub.aiDetected === true ? C.success : C.accent }]} />
+              <View key={sub.id || i} style={hd.actRow}>
+                <View style={[hd.actDot, sub.aiDetected === true && { backgroundColor: C.accent }]} />
                 <View style={{ flex: 1 }}>
                   <Text style={[T.small, { color: C.text, fontWeight: '600' }]}>Level {sub.levelId} Practice</Text>
                   <Text style={T.cap}>{new Date(sub.date).toLocaleDateString()}</Text>
                 </View>
-                <View style={[ho.actBadge, sub.aiDetected === true && { backgroundColor: C.successDim }]}>
-                  <Text style={[T.cap, { color: sub.aiDetected === true ? C.success : C.accentLight, fontWeight: '700' }]}>
-                    {sub.aiDetected === true ? 'Verified' : 'Pending'}
-                  </Text>
-                </View>
+                <Text style={[T.cap, { color: sub.aiDetected === true ? C.accent : C.textMuted }]}>
+                  {sub.aiDetected === true ? 'Verified' : 'Pending'}
+                </Text>
               </View>
             ))}
           </Animated.View>
         )}
+
       </ScrollView>
 
       {/* ── Exercise Picker Modal ── */}
@@ -2650,7 +2686,7 @@ function HomeScreen({ navigation }) {
                   setShowExPicker(false);
                 }}
               >
-                <View style={[ho.sheetEmoji, { backgroundColor: level.color + '20' }]}>
+                <View style={[ho.sheetEmoji, { backgroundColor: C.bgCardElevated }]}>
                   <Text style={{ fontSize: 20 }}>{ex.emoji}</Text>
                 </View>
                 <View style={{ flex: 1 }}>
@@ -2667,30 +2703,181 @@ function HomeScreen({ navigation }) {
   );
 }
 
+const amb = StyleSheet.create({
+  glowTopRight: {
+    position: 'absolute',
+    top: -100,
+    right: -100,
+    width: 400,
+    height: 400,
+    borderRadius: 200,
+    backgroundColor: 'rgba(215,255,61,0.08)',
+    shadowColor: '#D7FF3D',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 80,
+    elevation: 0,
+  },
+  glowBottomLeft: {
+    position: 'absolute',
+    bottom: 200,
+    left: -150,
+    width: 350,
+    height: 350,
+    borderRadius: 175,
+    backgroundColor: 'rgba(215,255,61,0.04)',
+    shadowColor: '#D7FF3D',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.2,
+    shadowRadius: 80,
+    elevation: 0,
+  },
+  grain: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.03,
+    backgroundColor: 'transparent',
+  },
+});
+
+const hd = StyleSheet.create({
+  // header
+  header:        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 8 },
+  avatarWrap:    { width: 40, height: 40, borderRadius: 20, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' },
+  avatarText:    { fontSize: 15, fontWeight: '900', color: C.black },
+  welcomeLabel:  { fontSize: 11, fontWeight: '700', letterSpacing: 1.5, color: C.textMuted },
+  welcomeName:   { fontSize: 18, fontWeight: '900', color: C.white, letterSpacing: -0.3 },
+  notifBtn:      { width: 40, height: 40, borderRadius: R.full, backgroundColor: C.bgCard, alignItems: 'center', justifyContent: 'center' },
+  notifDot:      { width: 7, height: 7, borderRadius: 4, backgroundColor: C.accent, position: 'absolute', top: 8, right: 8 },
+  // stats row
+  statsRow:      { flexDirection: 'row', gap: 12, marginTop: 24, paddingHorizontal: 20 },
+  statCard:      { flex: 1, backgroundColor: C.bgCard, borderRadius: R.xl, padding: 16, borderWidth: 1, borderColor: C.border, alignItems: 'flex-start', gap: 4 },
+  statNum:       { fontSize: 22, fontWeight: '900', color: C.white, marginTop: 4 },
+  statLabel:     { fontSize: 10, fontWeight: '700', letterSpacing: 1.2, textTransform: 'uppercase', color: C.textMuted },
+  // shared card
+  card:          { marginHorizontal: 20, backgroundColor: C.bgCard, borderRadius: R.xl, padding: 20, borderWidth: 1, borderColor: C.border },
+  cardHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
+  cardLabel:     { fontSize: 11, fontWeight: '700', letterSpacing: 1.5, textTransform: 'uppercase', color: C.textMuted },
+  // weekly bars
+  barsRow:       { flexDirection: 'row', alignItems: 'flex-end', gap: 6, marginTop: 4 },
+  barCol:        { flex: 1, alignItems: 'center', gap: 6 },
+  barTrack:      { width: '100%', height: 56, backgroundColor: C.bgCardElevated, borderRadius: 6, justifyContent: 'flex-end', overflow: 'hidden' },
+  barFill:       { width: '100%', backgroundColor: C.border, borderRadius: 6 },
+  barLabel:      { fontSize: 10, fontWeight: '600', color: C.textMuted, letterSpacing: 0.5 },
+  // level card
+  levelName:     { fontSize: 28, fontWeight: '900', color: C.white, letterSpacing: -0.5, marginTop: 4 },
+  progressTrack: { width: '100%', height: 6, backgroundColor: C.bgCardElevated, borderRadius: 3, overflow: 'hidden' },
+  progressFill:  { height: 6, backgroundColor: C.accent, borderRadius: 3 },
+  // CTA button
+  ctaBtn:        { height: 60, borderRadius: R.full, backgroundColor: C.accent, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, justifyContent: 'space-between' },
+  ctaText:       { fontSize: 15, fontWeight: '900', color: C.black, letterSpacing: 1, textTransform: 'uppercase' },
+  ctaArrow:      { width: 40, height: 40, borderRadius: 20, backgroundColor: C.black, alignItems: 'center', justifyContent: 'center' },
+  // start banner
+  startBanner:   { flexDirection: 'row', alignItems: 'center', marginHorizontal: 20, marginTop: 16, backgroundColor: C.bgCard, borderRadius: R.xl, padding: S.md, borderWidth: 1, borderColor: C.accent + '44', gap: S.sm },
+  startBannerBtn:{ backgroundColor: C.accent, borderRadius: R.full, paddingHorizontal: 14, paddingVertical: 7 },
+  // daily
+  tipRow:        { flexDirection: 'row', gap: 8, backgroundColor: C.bgCardElevated, borderRadius: R.md, padding: 10 },
+  dailyCompleteBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: C.accent, borderRadius: R.full, paddingVertical: 13 },
+  // activity
+  actRow:        { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.border },
+  actDot:        { width: 8, height: 8, borderRadius: 4, backgroundColor: C.border },
+});
+
+const homeHero = StyleSheet.create({
+  heroWrap: {
+    width: '100%',
+    height: height * 0.55,
+    backgroundColor: C.black,
+    overflow: 'hidden',
+  },
+  heroImage: {
+    width: '100%',
+    height: height * 0.55,
+  },
+  heroOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: height * 0.55 * 0.5,
+  },
+  heroContent: {
+    position: 'absolute',
+    left: 24,
+    right: 24,
+    bottom: 32,
+  },
+  heroKicker: {
+    color: C.accent,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 2,
+    marginBottom: 8,
+  },
+  heroTitle: {
+    color: C.white,
+    fontSize: 44,
+    fontWeight: '900',
+    letterSpacing: -1.5,
+    lineHeight: 46,
+    marginBottom: 8,
+  },
+  heroSubtitle: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 15,
+    fontWeight: '500',
+    marginBottom: 20,
+    maxWidth: 280,
+  },
+  heroBtn: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    overflow: 'hidden',
+    shadowColor: C.accent,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  heroBtnGrad: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 28,
+    paddingVertical: 16,
+  },
+  heroBtnText: {
+    color: C.white,
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+});
+
 const ho = StyleSheet.create({
   topBar:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: S.md, paddingBottom: S.sm },
   notifBtn:       { width: 38, height: 38, borderRadius: R.full, backgroundColor: C.bgCard, alignItems: 'center', justifyContent: 'center' },
   notifDot:       { width: 8, height: 8, borderRadius: 4, backgroundColor: C.accent, position: 'absolute', top: 7, right: 7, borderWidth: 1.5, borderColor: C.bg },
-  avatarCircle:   { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  avatarCircle:   { width: 40, height: 40, borderRadius: 20, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' },
   avatarText:     { fontSize: 15, fontWeight: '800', color: C.white },
   // week strip
-  weekRow:        { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: S.md, paddingVertical: S.sm, marginTop: S.xs },
+  weekRow:        { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: S.md, paddingVertical: S.sm, marginTop: 32 },
   dayCol:         { alignItems: 'center', gap: 4 },
-  dayCircle:      { width: 30, height: 30, borderRadius: 15, backgroundColor: C.bgCard, alignItems: 'center', justifyContent: 'center' },
-  dayCircleActive:{ backgroundColor: C.accent },
+  dayCircle:      { width: 30, height: 30, borderRadius: 15, backgroundColor: 'transparent', borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
+  dayCircleActive:{ backgroundColor: C.accent, borderColor: C.accent },
+  dayCircleTrained:{ borderColor: C.accent + '66' },
   dayDot:         { width: 4, height: 4, borderRadius: 2, backgroundColor: C.accent },
   // hero card
-  heroCard:       { marginHorizontal: S.md, marginTop: S.sm, borderRadius: R.xxl, padding: S.lg, borderWidth: 1, borderColor: C.border, overflow: 'hidden', backgroundColor: C.bgCard },
+  heroCard:       { marginHorizontal: S.md, marginTop: 32, borderRadius: R.xxl, padding: S.lg, borderWidth: 1, borderColor: C.border, backgroundColor: C.bgCard },
   heroTop:        { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
   heroBadge:      { width: 72, height: 72, borderRadius: R.xl, alignItems: 'center', justifyContent: 'center' },
   // stats
-  statsRow:       { flexDirection: 'row', gap: S.sm, marginHorizontal: S.md, marginTop: S.md },
+  statsRow:       { flexDirection: 'row', gap: S.sm, marginHorizontal: S.md, marginTop: 32 },
   statCard:       { flex: 1, backgroundColor: C.bgCard, borderRadius: R.xl, padding: S.md, alignItems: 'center', borderWidth: 1, borderColor: C.border },
   statIconWrap:   { width: 36, height: 36, borderRadius: R.full, alignItems: 'center', justifyContent: 'center' },
   // section
-  section:        { marginHorizontal: S.md, marginTop: S.lg },
+  section:        { marginHorizontal: S.md, marginTop: 32 },
   sectionHeader:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: S.sm },
-  goldPill:       { backgroundColor: C.goldDim, paddingHorizontal: S.sm, paddingVertical: 3, borderRadius: R.full },
+  goldPill:       { backgroundColor: C.accentDim, paddingHorizontal: S.sm, paddingVertical: 3, borderRadius: R.full },
   // daily
   dailyCard:      { flexDirection: 'row', backgroundColor: C.bgCard, borderRadius: R.xl, borderWidth: 1, borderColor: C.border, overflow: 'hidden' },
   dailyBar:       { width: 4, backgroundColor: C.accent },
@@ -2702,11 +2889,11 @@ const ho = StyleSheet.create({
   doneRow:        { flexDirection: 'row', alignItems: 'center', gap: S.xs },
   completeBtn:    { borderRadius: R.lg, overflow: 'hidden' },
   completeBtnGrad:{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: S.xs, paddingVertical: 10 },
-  // actions
-  actionsRow:     { flexDirection: 'row', gap: S.sm },
-  actionBig:      { flex: 1, borderRadius: R.xl, overflow: 'hidden', height: 110 },
-  actionGrad:     { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  actionDark:     { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: C.bgCard, borderWidth: 1, borderColor: C.border },
+  // primary action
+  recordBtn:      { borderRadius: R.xl, overflow: 'hidden', backgroundColor: C.accent },
+  recordBtnInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: S.sm, paddingVertical: 18 },
+  recordBtnText:  { fontSize: 16, fontWeight: '700', color: C.white, letterSpacing: -0.2 },
+  secondaryLink:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: S.md },
   // start here banner
   startHereBanner: { flexDirection: 'row', alignItems: 'center', marginHorizontal: S.md, marginTop: S.md, backgroundColor: C.bgCard, borderRadius: R.xl, padding: S.md, borderWidth: 1, borderColor: C.accent + '55', gap: S.sm },
   startHereActions:{ alignItems: 'flex-end', gap: S.xs },
@@ -2731,7 +2918,7 @@ const ho = StyleSheet.create({
 function LevelsScreen({ navigation }) {
   const insets   = useSafeAreaInsets();
   const { progress } = useContext(UserProgressContext);
-  const { canAccessLevel, showPaywall, isPro } = useContext(PurchaseContext);
+  const { canAccessLevel, showPaywall } = useContext(PurchaseContext);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useFocusEffect(useCallback(() => {
@@ -2756,21 +2943,24 @@ function LevelsScreen({ navigation }) {
   };
 
   return (
-    <View style={[lv.container, { paddingTop: insets.top }]}>
-      {/* Header */}
-      <Animated.View style={[lv.header, { opacity: fadeAnim }]}>
-        <View>
-          <Text style={T.h1}>Exercises</Text>
-          <Text style={T.body}>{EXERCISE_LEVELS.length} levels · {total} exercises total</Text>
+    <View style={lv.container}>
+      {/* Ambient glow — same as HomeScreen */}
+      <LinearGradient colors={['#0A0A0B', '#0F1014', '#0A0A0B']} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} />
+      <View style={[amb.glowTopRight, { top: -80, right: -80, width: 300, height: 300, borderRadius: 150 }]} pointerEvents="none" />
+
+      <Animated.View style={[lv.header, { paddingTop: insets.top + 20, opacity: fadeAnim }]}>
+        <View style={{ flex: 1 }}>
+          <Text style={lv.title}>LEVELS</Text>
+          <Text style={lv.subtitle}>YOUR HANDSTAND JOURNEY</Text>
         </View>
-        <View style={lv.totalBadge}>
-          <Ionicons name="barbell-outline" size={14} color={C.accent} />
-          <Text style={[T.cap, { color: C.accent, fontWeight: '700' }]}>{total}</Text>
+        <View style={lv.totalPill}>
+          <Ionicons name="barbell-outline" size={12} color={C.accent} />
+          <Text style={lv.totalPillText}>{total} EXERCISES</Text>
         </View>
       </Animated.View>
 
       <ScrollView
-        contentContainerStyle={{ paddingHorizontal: S.md, paddingTop: S.md, paddingBottom: 32 }}
+        contentContainerStyle={{ paddingTop: 8, paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}
       >
         {EXERCISE_LEVELS.map((level, index) => {
@@ -2791,16 +2981,18 @@ function LevelsScreen({ navigation }) {
             />
           );
         })}
-        <View style={{ height: 20 }} />
       </ScrollView>
     </View>
   );
 }
 
 const lv = StyleSheet.create({
-  container:  { flex: 1, backgroundColor: C.bg },
-  header:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: S.md, paddingTop: S.md, paddingBottom: S.lg, borderBottomWidth: 1, borderBottomColor: C.border },
-  totalBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: C.accentDim, paddingHorizontal: S.sm, paddingVertical: S.xs, borderRadius: R.full },
+  container:    { flex: 1, backgroundColor: C.bg },
+  header:       { paddingHorizontal: 20, paddingBottom: 24, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
+  title:        { fontSize: 32, fontWeight: '900', color: C.white, letterSpacing: -0.5 },
+  subtitle:     { fontSize: 11, fontWeight: '700', letterSpacing: 1.5, textTransform: 'uppercase', color: C.textMuted, marginTop: 4 },
+  totalPill:    { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: C.bgCard, paddingHorizontal: 10, paddingVertical: 6, borderRadius: R.full, borderWidth: 1, borderColor: C.accent + '44' },
+  totalPillText:{ fontSize: 10, fontWeight: '800', letterSpacing: 1, color: C.accent },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2823,42 +3015,78 @@ function LevelDetailScreen({ route, navigation }) {
   if (!level) return null;
 
   return (
-    <View style={[ld.container, { paddingTop: insets.top }]}>
-      {/* Header */}
-      <Animated.View style={[ld.header, { opacity: fadeAnim }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={ld.backBtn}>
-          <Ionicons name="arrow-back" size={20} color={C.text} />
-        </TouchableOpacity>
-        <View style={{ flex: 1, paddingHorizontal: S.sm }}>
-          <Text style={[T.label, { color: level.color }]}>LEVEL {level.id}</Text>
-          <Text style={[T.h3, { fontSize: 17 }]}>{level.name}</Text>
-        </View>
-        <View style={[ld.iconBubble, { backgroundColor: level.color + '20' }]}>
-          <Text style={{ fontSize: 24 }}>{level.icon}</Text>
-        </View>
-      </Animated.View>
-
+    <View style={[ld.container]}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 160 }}>
-        {/* Hero band */}
-        <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+        {/* HERO — full-width gradient placeholder, swap in real photo later */}
+        <View style={levelHero.heroWrap}>
           <LinearGradient
-            colors={[level.color + '25', C.bg]}
-            style={ld.hero}
-            start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+            colors={['#1F1F1F', '#0A0A0A']}
+            style={[levelHero.heroBg, { paddingTop: insets.top }]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
           >
-            <Text style={[T.body, { textAlign: 'center', lineHeight: 20, color: C.textSub }]}>{level.description}</Text>
-            <View style={ld.heroBadges}>
-              <View style={[ld.badge, { backgroundColor: level.color + '20' }]}>
-                <Ionicons name="barbell-outline" size={12} color={level.color} />
-                <Text style={[T.cap, { color: level.color, fontWeight: '700' }]}>{level.exercises.length} exercises</Text>
+            {/* Decorative orange glow */}
+            <View style={levelHero.glowCircle} />
+
+            {/* Level emoji as placeholder until real photos */}
+            <Text style={levelHero.heroEmoji}>{level.icon}</Text>
+
+            {/* Bottom gradient overlay so text is readable */}
+            <LinearGradient
+              colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.95)']}
+              style={levelHero.heroOverlay}
+            />
+
+            {/* Back button */}
+            <TouchableOpacity
+              style={[levelHero.backBtn, { top: insets.top + 10 }]}
+              onPress={() => navigation.goBack()}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="chevron-back" size={22} color={C.white} />
+            </TouchableOpacity>
+          </LinearGradient>
+
+          {/* Title + info pills overlaid at the bottom of the hero */}
+          <View style={levelHero.heroContent}>
+            <Text style={[T.label, { color: C.accent, marginBottom: 6 }]}>LEVEL {level.id} · {level.subtitle}</Text>
+            <Text style={levelHero.heroTitle}>{level.name.toUpperCase()}</Text>
+
+            <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'center', marginTop: 16 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.bgCardElevated, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 }}>
+                <Ionicons name="barbell-outline" size={14} color={C.accent} />
+                <Text style={{ fontSize: 12, fontWeight: '700', color: C.white, textTransform: 'uppercase', letterSpacing: 0.5 }}>{level.exercises.length} EXERCISES</Text>
               </View>
-              <View style={[ld.badge, { backgroundColor: C.goldDim }]}>
-                <Ionicons name="star" size={12} color={C.gold} />
-                <Text style={[T.cap, { color: C.gold, fontWeight: '700' }]}>+{level.xpReward} XP on completion</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.bgCardElevated, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 }}>
+                <Ionicons name="flash-outline" size={14} color={C.accent} />
+                <Text style={{ fontSize: 12, fontWeight: '700', color: C.white, textTransform: 'uppercase', letterSpacing: 0.5 }}>+{level.xpReward} XP</Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.bgCardElevated, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 }}>
+                <Ionicons name="time-outline" size={14} color={C.accent} />
+                <Text style={{ fontSize: 12, fontWeight: '700', color: C.white, textTransform: 'uppercase', letterSpacing: 0.5 }}>~{level.exercises.length * 3} MIN</Text>
               </View>
             </View>
-          </LinearGradient>
-        </Animated.View>
+
+            {/* Big CTA button */}
+            <TouchableOpacity
+              style={levelHero.ctaBtn}
+              onPress={() => navigation.navigate('WristWarmup', { levelId })}
+              activeOpacity={0.85}
+            >
+              <LinearGradient
+                colors={G.accent}
+                style={levelHero.ctaGrad}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+              >
+                <Text style={levelHero.ctaText}>START LEVEL</Text>
+                <View style={levelHero.ctaIconCircle}>
+                  <Ionicons name="arrow-forward" size={14} color={C.accent} />
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </View>
 
         {/* Exercise list */}
         <View style={{ paddingHorizontal: S.md }}>
@@ -2877,14 +3105,32 @@ function LevelDetailScreen({ route, navigation }) {
           activeOpacity={0.85}
         >
           <LinearGradient colors={G.accent} style={ld.ctaGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-            <Ionicons name="videocam" size={18} color={C.white} />
-            <Text style={[T.h4, { color: C.white, fontSize: 15 }]}>Record Level {level.id} Practice</Text>
+            <Ionicons name="arrow-forward" size={18} color={C.black} />
+            <Text style={[T.h4, { color: C.black, fontSize: 15, fontWeight: '900', textTransform: 'uppercase' }]}>Start Level {level.id}</Text>
           </LinearGradient>
         </TouchableOpacity>
       </Animated.View>
     </View>
   );
 }
+
+const levelHero = StyleSheet.create({
+  heroWrap:      { width: '100%', backgroundColor: C.bgDeep, marginBottom: S.md },
+  heroBg:        { height: 380, width: '100%', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  heroEmoji:     { fontSize: 140, opacity: 0.35 },
+  glowCircle:    { position: 'absolute', width: 280, height: 280, borderRadius: 140, backgroundColor: C.accent, opacity: 0.15, top: 40 },
+  heroOverlay:   { position: 'absolute', left: 0, right: 0, bottom: 0, height: 220 },
+  backBtn:       { position: 'absolute', left: 16, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' },
+  heroContent:   { position: 'absolute', bottom: 24, left: 20, right: 20 },
+  heroTitle:     { fontSize: 32, fontWeight: '900', color: C.white, letterSpacing: -0.8, marginBottom: 12 },
+  pillRow:       { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  pill:          { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.1)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
+  pillText:      { color: C.white, fontSize: 12, fontWeight: '700' },
+  ctaBtn:        { borderRadius: 999, overflow: 'hidden', shadowColor: C.accent, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.5, shadowRadius: 16, elevation: 10 },
+  ctaGrad:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 24, paddingRight: 6, paddingVertical: 6 },
+  ctaText:       { color: C.black, fontSize: 17, fontWeight: '900', letterSpacing: -0.3 },
+  ctaIconCircle: { width: 42, height: 42, borderRadius: 21, backgroundColor: C.white, alignItems: 'center', justifyContent: 'center' },
+});
 
 const ld = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
@@ -2895,8 +3141,8 @@ const ld = StyleSheet.create({
   heroBadges:{ flexDirection: 'row', gap: S.sm, marginTop: S.md, flexWrap: 'wrap', justifyContent: 'center' },
   badge:     { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: S.md, paddingVertical: 6, borderRadius: R.full },
   cta:       { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: S.md, paddingTop: S.sm, backgroundColor: C.bg, borderTopWidth: 1, borderTopColor: C.border },
-  ctaBtn:    { borderRadius: R.xl, overflow: 'hidden' },
-  ctaGrad:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: S.sm, paddingVertical: S.md + 2 },
+  ctaBtn:    { borderRadius: R.full, overflow: 'hidden', shadowColor: C.accent, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 16, elevation: 8 },
+  ctaGrad:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: S.sm, paddingVertical: S.md + 4 },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2997,8 +3243,8 @@ function WristWarmupScreen({ route, navigation }) {
             {/* Safety notice on first step */}
             {step === 0 && (
               <View style={ww.safetyBanner}>
-                <Ionicons name="shield-checkmark-outline" size={16} color={C.gold} />
-                <Text style={[T.small, { color: C.gold, flex: 1, lineHeight: 18 }]}>
+                <Ionicons name="shield-checkmark-outline" size={16} color={C.accent} />
+                <Text style={[T.small, { color: C.textSub, flex: 1, lineHeight: 18 }]}>
                   Wrist injuries are the #1 risk in handstand training. This 3-minute routine can prevent months of recovery time.
                 </Text>
               </View>
@@ -3007,10 +3253,10 @@ function WristWarmupScreen({ route, navigation }) {
             {/* Next / Done button */}
             <TouchableOpacity style={ww.nextBtn} onPress={handleNext} activeOpacity={0.85}>
               <LinearGradient colors={G.accent} style={ww.nextGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                <Text style={[T.h4, { color: C.white, fontSize: 15 }]}>
-                  {isLast ? 'Finish Warm-up ✓' : `Next: ${WRIST_WARMUP[step + 1].name}`}
+                <Text style={[T.h4, { color: C.black, fontSize: 15, fontWeight: '900' }]}>
+                  {isLast ? 'Finish Warm-up' : `Next: ${WRIST_WARMUP[step + 1].name}`}
                 </Text>
-                {!isLast && <Ionicons name="arrow-forward" size={16} color={C.white} />}
+                {!isLast && <Ionicons name="arrow-forward" size={16} color={C.black} />}
               </LinearGradient>
             </TouchableOpacity>
           </Animated.View>
@@ -3027,8 +3273,8 @@ function WristWarmupScreen({ route, navigation }) {
 
             <TouchableOpacity style={[ww.nextBtn, { marginTop: S.lg }]} onPress={handleStartRecording} activeOpacity={0.85}>
               <LinearGradient colors={G.accent} style={ww.nextGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                <Ionicons name="videocam" size={18} color={C.white} />
-                <Text style={[T.h4, { color: C.white, fontSize: 15 }]}>Start Recording</Text>
+                <Ionicons name="videocam" size={18} color={C.black} />
+                <Text style={[T.h4, { color: C.black, fontSize: 15, fontWeight: '900' }]}>Start Recording</Text>
               </LinearGradient>
             </TouchableOpacity>
           </View>
@@ -3050,7 +3296,7 @@ const ww = StyleSheet.create({
   iconCircle:      { width: 110, height: 110, borderRadius: 55, backgroundColor: C.accentDim, borderWidth: 2, borderColor: C.accent + '44', alignItems: 'center', justifyContent: 'center' },
   durationPill:    { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: C.accentDim, paddingHorizontal: S.md, paddingVertical: 5, borderRadius: R.full, marginTop: S.sm },
   instructionCard: { backgroundColor: C.bgCard, borderRadius: R.xl, padding: S.lg, marginTop: S.md, borderWidth: 1, borderColor: C.border, width: '100%' },
-  safetyBanner:    { flexDirection: 'row', alignItems: 'flex-start', gap: S.sm, backgroundColor: C.goldDim, borderRadius: R.lg, padding: S.md, marginTop: S.md, width: '100%', borderWidth: 1, borderColor: C.gold + '44' },
+  safetyBanner:    { flexDirection: 'row', alignItems: 'flex-start', gap: S.sm, backgroundColor: C.accentDim, borderRadius: R.lg, padding: S.md, marginTop: S.md, width: '100%', borderWidth: 1, borderColor: C.accent + '44' },
   nextBtn:         { width: '100%', borderRadius: R.xl, overflow: 'hidden', marginTop: S.lg },
   nextGrad:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: S.sm, paddingVertical: S.md + 2 },
   checkCircle:     { width: 100, height: 100, borderRadius: 50, backgroundColor: C.success, alignItems: 'center', justifyContent: 'center', marginTop: S.xl, shadowColor: C.success, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 20, elevation: 8 },
@@ -3066,8 +3312,6 @@ function VideoSubmissionScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
   const level  = EXERCISE_LEVELS.find(l => l.id === levelId) || EXERCISE_LEVELS[0];
   const { addSubmission } = useContext(UserProgressContext);
-  const { showPaywall } = useContext(PurchaseContext);
-
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [micPermission,    requestMicPermission]    = useMicrophonePermissions();
 
@@ -3273,7 +3517,7 @@ function VideoSubmissionScreen({ route, navigation }) {
     }
   };
 
-  const recColor = recCount > recordDuration * 0.4 ? C.success : recCount > recordDuration * 0.15 ? C.gold : C.error;
+  const recColor = recCount > recordDuration * 0.4 ? C.success : recCount > recordDuration * 0.15 ? C.accent : C.error;
 
   // Permission loading
   if (!cameraPermission || !micPermission) {
@@ -3305,8 +3549,8 @@ function VideoSubmissionScreen({ route, navigation }) {
           activeOpacity={0.85}
         >
           <LinearGradient colors={G.accent} style={vs.permBtnGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-            <Ionicons name="videocam-outline" size={18} color={C.white} />
-            <Text style={[T.h4, { color: C.white }]}>Grant Camera Access</Text>
+            <Ionicons name="videocam-outline" size={18} color={C.black} />
+            <Text style={[T.h4, { color: C.black, fontWeight: '900' }]}>Grant Camera Access</Text>
           </LinearGradient>
         </TouchableOpacity>
         <TouchableOpacity style={{ marginTop: S.md }} onPress={() => navigation.goBack()}>
@@ -3371,9 +3615,9 @@ function VideoSubmissionScreen({ route, navigation }) {
       {recState === RS.CHECKING && (
         <View style={vs.checkOverlay}>
           <Animated.View style={{ transform: [{ scale: checkPulse }], alignItems: 'center', marginBottom: S.lg }}>
-            <LinearGradient colors={G.accent} style={vs.checkLogo} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-              <Text style={{ fontSize: 38 }}>🤸</Text>
-            </LinearGradient>
+            <View style={vs.checkLogo}>
+              <Ionicons name="scan-outline" size={38} color={C.accent} />
+            </View>
           </Animated.View>
           <Text style={[T.h3, { color: C.white, textAlign: 'center', marginBottom: S.xs }]}>AI is analyzing your form…</Text>
           <Text style={[T.small, { color: 'rgba(255,255,255,0.5)', textAlign: 'center', marginBottom: S.xl }]}>
@@ -3419,7 +3663,7 @@ function VideoSubmissionScreen({ route, navigation }) {
                 <View style={vs.aiBox}>
                   <Text style={[T.h4, { color: C.success, fontSize: 14 }]}>✓ Handstand Detected!</Text>
                   <View style={vs.aiTypePill}>
-                    <Text style={[T.cap, { color: C.accentLight, fontWeight: '700' }]}>
+                    <Text style={[T.cap, { color: C.accent, fontWeight: '700' }]}>
                       {aiResult.type?.replace('_', ' ').toUpperCase()} · {aiResult.confidence} confidence
                     </Text>
                   </View>
@@ -3427,15 +3671,15 @@ function VideoSubmissionScreen({ route, navigation }) {
                   {aiResult.starRating > 0 && (
                     <View style={{ flexDirection: 'row', gap: 3, marginTop: S.xs }}>
                       {[1,2,3,4,5].map(s => (
-                        <Ionicons key={s} name={s <= aiResult.starRating ? 'star' : 'star-outline'} size={16} color={C.gold} />
+                        <Ionicons key={s} name={s <= aiResult.starRating ? 'star' : 'star-outline'} size={16} color={C.accent} />
                       ))}
                       {aiResult.formScore != null && (
-                        <Text style={[T.cap, { color: C.gold, fontWeight: '700', marginLeft: S.xs }]}>{aiResult.formScore}% form</Text>
+                        <Text style={[T.cap, { color: C.accent, fontWeight: '700', marginLeft: S.xs }]}>{aiResult.formScore}% form</Text>
                       )}
                     </View>
                   )}
                   <Text style={[T.cap, { color: C.textSub, marginTop: 4, textAlign: 'center' }]}>{aiResult.message}</Text>
-                  <Text style={[T.cap, { color: C.gold, marginTop: 4, fontWeight: '700' }]}>+10 Bonus XP for verified handstand!</Text>
+                  <Text style={[T.cap, { color: C.accent, marginTop: 4, fontWeight: '700' }]}>+10 Bonus XP for verified handstand!</Text>
                 </View>
               )}
 
@@ -3445,7 +3689,7 @@ function VideoSubmissionScreen({ route, navigation }) {
                   <Text style={[T.label, { color: C.accent, marginBottom: S.xs }]}>COACHING CUES</Text>
                   {aiResult.formFeedback.map((cue, i) => (
                     <View key={i} style={vs.cueLine}>
-                      <View style={[vs.cueDot, { backgroundColor: cue.includes('great') || cue.includes('good') || cue.includes('locked') ? C.success : C.gold }]} />
+                      <View style={[vs.cueDot, { backgroundColor: cue.includes('great') || cue.includes('good') || cue.includes('locked') ? C.success : C.accent }]} />
                       <Text style={[T.small, { flex: 1, lineHeight: 18 }]}>{cue}</Text>
                     </View>
                   ))}
@@ -3482,8 +3726,9 @@ function VideoSubmissionScreen({ route, navigation }) {
               {/* AI error */}
               {aiError && (
                 <View style={vs.aiErrorBox}>
-                  <Text style={[T.cap, { color: C.gold, textAlign: 'center', lineHeight: 17 }]}>
-                    ⚠️ AI check unavailable – submitting without verification
+                  <Ionicons name="warning-outline" size={14} color={C.accent} />
+                  <Text style={[T.cap, { color: C.textSub, textAlign: 'center', lineHeight: 17, flex: 1 }]}>
+                    AI check unavailable – submitting without verification
                   </Text>
                 </View>
               )}
@@ -3514,10 +3759,10 @@ function VideoSubmissionScreen({ route, navigation }) {
                 {(!aiResult || aiResult.detected || aiError || aiQueued) && (
                   <TouchableOpacity style={vs.submitBtn} onPress={handleSubmit}>
                     <LinearGradient colors={G.accent} style={vs.submitGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                      <Text style={[T.small, { color: C.white, fontWeight: '800' }]}>
+                      <Text style={[T.small, { color: C.black, fontWeight: '900' }]}>
                         {aiResult?.detected ? 'Submit +10 XP' : 'Submit'}
                       </Text>
-                      <Ionicons name="arrow-forward" size={14} color={C.white} />
+                      <Ionicons name="arrow-forward" size={14} color={C.black} />
                     </LinearGradient>
                   </TouchableOpacity>
                 )}
@@ -3547,7 +3792,7 @@ function VideoSubmissionScreen({ route, navigation }) {
               activeOpacity={0.85}
             >
               <LinearGradient colors={G.accent} style={vs.recordInner} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-                <Ionicons name="videocam" size={28} color={C.white} />
+                <Ionicons name="videocam" size={28} color={C.black} />
               </LinearGradient>
             </TouchableOpacity>
             <Text style={[T.cap, { color: 'rgba(255,255,255,0.7)', marginTop: S.sm }]}>
@@ -3576,16 +3821,16 @@ const vs = StyleSheet.create({
   recDot:        { width: 8, height: 8, borderRadius: 4, backgroundColor: C.error },
   recCountNum:   { fontSize: 100, fontWeight: '900', textShadowColor: 'rgba(0,0,0,0.6)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 10 },
   checkOverlay:  { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.92)', padding: S.xl },
-  checkLogo:     { width: 88, height: 88, borderRadius: 28, alignItems: 'center', justifyContent: 'center', shadowColor: C.accent, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.7, shadowRadius: 18, elevation: 12 },
+  checkLogo:     { width: 88, height: 88, borderRadius: 44, backgroundColor: C.accentDim, borderWidth: 1, borderColor: C.accent + '44', alignItems: 'center', justifyContent: 'center', shadowColor: C.accent, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 18, elevation: 12 },
   scanBox:       { width: 200, height: 120, backgroundColor: C.accentDim, borderRadius: R.lg, overflow: 'hidden', borderWidth: 1, borderColor: C.accent + '44' },
-  scanLine:      { position: 'absolute', left: 0, right: 0, height: 2, backgroundColor: C.accentLight, shadowColor: C.accentLight, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.9, shadowRadius: 6 },
+  scanLine:      { position: 'absolute', left: 0, right: 0, height: 2, backgroundColor: C.accent, shadowColor: C.accent, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.9, shadowRadius: 6 },
   doneCard:      { backgroundColor: C.bgCard, borderRadius: R.xxl, padding: S.lg, width: '100%', maxWidth: 420, alignItems: 'center', borderWidth: 1, borderColor: C.border },
   videoPreview:  { width: '100%', height: 190, borderRadius: R.xl, backgroundColor: C.black, marginBottom: S.sm },
   okRow:         { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: C.successDim, paddingHorizontal: S.md, paddingVertical: S.xs, borderRadius: R.full, marginBottom: S.sm },
   aiBox:         { backgroundColor: C.successDim, borderRadius: R.lg, padding: S.md, marginVertical: S.sm, borderWidth: 1, borderColor: C.success + '44', width: '100%', alignItems: 'center', gap: 4 },
   aiBoxFail:     { backgroundColor: C.errorDim, borderColor: C.error + '44' },
   aiTypePill:      { backgroundColor: C.accentDim, paddingHorizontal: S.sm, paddingVertical: 3, borderRadius: R.full, marginTop: 2 },
-  aiErrorBox:      { flexDirection: 'row', alignItems: 'flex-start', gap: S.xs, backgroundColor: C.goldDim, borderRadius: R.md, padding: S.md, marginVertical: S.sm, borderWidth: 1, borderColor: C.gold + '44', width: '100%' },
+  aiErrorBox:      { flexDirection: 'row', alignItems: 'flex-start', gap: S.xs, backgroundColor: C.bgCardAlt, borderRadius: R.md, padding: S.md, marginVertical: S.sm, borderWidth: 1, borderColor: C.border, width: '100%' },
   formFeedbackBox: { backgroundColor: C.bgCardAlt, borderRadius: R.lg, padding: S.md, marginVertical: S.sm, borderWidth: 1, borderColor: C.accent + '33', width: '100%' },
   selfCheckBox:    { backgroundColor: C.bgCardAlt, borderRadius: R.lg, padding: S.md, marginVertical: S.sm, borderWidth: 1, borderColor: C.border, width: '100%' },
   cueLine:         { flexDirection: 'row', alignItems: 'flex-start', gap: S.sm, marginBottom: S.xs },
@@ -3698,17 +3943,16 @@ function SubmissionReviewScreen({ route, navigation }) {
 
       {/* Logo */}
       <Animated.View style={[sv.logoWrap, { transform: [{ scale: logoScale }] }]}>
-        <LinearGradient colors={G.accent} style={sv.logoBg} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-          <Text style={{ fontSize: 32 }}>🤸</Text>
-        </LinearGradient>
+        <View style={sv.logoBg}>
+          <Ionicons name="checkmark-circle" size={32} color={C.accent} />
+        </View>
         <Text style={[T.h3, { fontWeight: '900', marginTop: S.sm }]}>HandstandHub</Text>
       </Animated.View>
 
       {/* Level badge */}
       <View style={sv.subInfo}>
-        <View style={[sv.levelPill, { backgroundColor: level.color + '20' }]}>
-          <Text style={{ fontSize: 16 }}>{level.icon}</Text>
-          <Text style={[T.small, { color: level.color, fontWeight: '700' }]}>{level.name}</Text>
+        <View style={[sv.levelPill, { backgroundColor: C.accentDim, borderWidth: 1, borderColor: C.accent + '44' }]}>
+          <Text style={[T.small, { color: C.accent, fontWeight: '700' }]}>Level {levelId} · {level.name}</Text>
         </View>
         <Text style={T.small}>{duration}s practice clip captured</Text>
       </View>
@@ -3738,20 +3982,20 @@ function SubmissionReviewScreen({ route, navigation }) {
 
           {/* XP earned */}
           <View style={sv.xpPill}>
-            <Text style={{ fontSize: 22 }}>⭐</Text>
-            <Text style={[T.h3, { color: C.gold }]}>+{totalXP} XP earned{aiVerified ? ` (incl. +${bonusXP} AI bonus)` : ''}!</Text>
+            <Ionicons name="flash" size={20} color={C.black} />
+            <Text style={[T.h3, { color: C.black, fontWeight: '900' }]}>+{totalXP} XP earned{aiVerified ? ` (incl. +${bonusXP} AI bonus)` : ''}!</Text>
           </View>
 
           {/* AI banner */}
           {aiVerified ? (
             <View style={sv.aiBannerGreen}>
               <Ionicons name="checkmark-circle" size={16} color={C.success} />
-              <Text style={[T.small, { color: C.success, fontWeight: '700' }]}>🤖 AI Verified Handstand · +{bonusXP} Bonus XP</Text>
+              <Text style={[T.small, { color: C.success, fontWeight: '700' }]}>AI Verified Handstand · +{bonusXP} Bonus XP</Text>
             </View>
           ) : (
             <View style={sv.aiBannerGold}>
-              <Ionicons name="time-outline" size={16} color={C.gold} />
-              <Text style={[T.small, { color: C.gold, fontWeight: '600' }]}>🤖 Not AI Verified · Submitted for manual review</Text>
+              <Ionicons name="time-outline" size={16} color={C.textSub} />
+              <Text style={[T.small, { color: C.textSub, fontWeight: '600' }]}>Not AI Verified · Submitted for manual review</Text>
             </View>
           )}
 
@@ -3763,17 +4007,17 @@ function SubmissionReviewScreen({ route, navigation }) {
                 {starRating != null && (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
                     {[1,2,3,4,5].map(s => (
-                      <Ionicons key={s} name={s <= starRating ? 'star' : 'star-outline'} size={13} color={C.gold} />
+                      <Ionicons key={s} name={s <= starRating ? 'star' : 'star-outline'} size={13} color={C.accent} />
                     ))}
                     {formScore != null && (
-                      <Text style={[T.cap, { color: C.gold, fontWeight: '700', marginLeft: 4 }]}>{formScore}%</Text>
+                      <Text style={[T.cap, { color: C.accent, fontWeight: '700', marginLeft: 4 }]}>{formScore}%</Text>
                     )}
                   </View>
                 )}
               </View>
               {formFeedback.map((cue, i) => (
                 <View key={i} style={sv.cueRow}>
-                  <View style={[sv.cueDot, { backgroundColor: cue.includes('great') || cue.includes('good') || cue.includes('locked') || cue.includes('fully') ? C.success : C.gold }]} />
+                  <View style={[sv.cueDot, { backgroundColor: cue.includes('great') || cue.includes('good') || cue.includes('locked') || cue.includes('fully') ? C.success : C.accent }]} />
                   <Text style={[T.small, { flex: 1, lineHeight: 19 }]}>{cue}</Text>
                 </View>
               ))}
@@ -3809,7 +4053,7 @@ function SubmissionReviewScreen({ route, navigation }) {
               </TouchableOpacity>
               <TouchableOpacity style={[sv.shareBtn, { backgroundColor: C.accentDim, borderColor: C.accent + '44' }]} onPress={handleGeneralShare} activeOpacity={0.8}>
                 <Text style={{ fontSize: 20 }}>🤝</Text>
-                <Text style={[T.cap, { color: C.accentLight, fontWeight: '700' }]}>Share</Text>
+                <Text style={[T.cap, { color: C.accent, fontWeight: '700' }]}>Share</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -3873,8 +4117,8 @@ function SubmissionReviewScreen({ route, navigation }) {
             </TouchableOpacity>
             <TouchableOpacity style={sv.homeBtn} onPress={() => navigation.navigate('Main')} activeOpacity={0.8}>
               <LinearGradient colors={G.accent} style={sv.homeBtnGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                <Ionicons name="home" size={14} color={C.white} />
-                <Text style={[T.small, { color: C.white, fontWeight: '700' }]}>Back to Home</Text>
+                <Ionicons name="home" size={14} color={C.black} />
+                <Text style={[T.small, { color: C.black, fontWeight: '900' }]}>Back to Home</Text>
               </LinearGradient>
             </TouchableOpacity>
           </View>
@@ -3888,16 +4132,16 @@ const sv = StyleSheet.create({
   container:        { flex: 1, backgroundColor: C.bg },
   content:          { alignItems: 'center', padding: S.lg },
   logoWrap:         { alignItems: 'center', marginTop: S.lg, marginBottom: S.lg },
-  logoBg:           { width: 64, height: 64, borderRadius: 20, alignItems: 'center', justifyContent: 'center', shadowColor: C.accent, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 8 },
+  logoBg:           { width: 64, height: 64, borderRadius: 32, backgroundColor: C.accentDim, borderWidth: 1, borderColor: C.accent + '44', alignItems: 'center', justifyContent: 'center', shadowColor: C.accent, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 8 },
   subInfo:          { alignItems: 'center', marginBottom: S.xl },
   levelPill:        { flexDirection: 'row', alignItems: 'center', gap: S.sm, paddingHorizontal: S.md, paddingVertical: S.sm, borderRadius: R.full, marginBottom: S.sm },
   stagesBox:        { width: '100%', backgroundColor: C.bgCard, borderRadius: R.xxl, padding: S.lg, borderWidth: 1, borderColor: C.border },
   loadBar:          { marginTop: S.md, height: 4, backgroundColor: C.border, borderRadius: R.full, overflow: 'hidden' },
   loadFill:         { height: '100%', backgroundColor: C.accent, borderRadius: R.full },
   doneWrap:         { width: '100%', alignItems: 'center' },
-  xpPill:           { flexDirection: 'row', alignItems: 'center', gap: S.sm, backgroundColor: C.goldDim, paddingHorizontal: S.lg, paddingVertical: S.md, borderRadius: R.full, marginBottom: S.md },
+  xpPill:           { flexDirection: 'row', alignItems: 'center', gap: S.sm, backgroundColor: C.accent, paddingHorizontal: S.lg, paddingVertical: S.md, borderRadius: R.full, marginBottom: S.md, shadowColor: C.accent, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 6 },
   aiBannerGreen:    { flexDirection: 'row', alignItems: 'center', gap: S.sm, width: '100%', borderRadius: R.lg, paddingHorizontal: S.md, paddingVertical: S.sm, marginBottom: S.md, backgroundColor: C.successDim, borderWidth: 1, borderColor: C.success + '44' },
-  aiBannerGold:     { flexDirection: 'row', alignItems: 'center', gap: S.sm, width: '100%', borderRadius: R.lg, paddingHorizontal: S.md, paddingVertical: S.sm, marginBottom: S.md, backgroundColor: C.goldDim, borderWidth: 1, borderColor: C.gold + '44' },
+  aiBannerGold:     { flexDirection: 'row', alignItems: 'center', gap: S.sm, width: '100%', borderRadius: R.lg, paddingHorizontal: S.md, paddingVertical: S.sm, marginBottom: S.md, backgroundColor: C.bgCard, borderWidth: 1, borderColor: C.border },
   formCard:         { width: '100%', backgroundColor: C.bgCard, borderRadius: R.xl, padding: S.md, marginBottom: S.md, borderWidth: 1, borderColor: C.accent + '33' },
   formCardHeader:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: S.sm },
   cueRow:           { flexDirection: 'row', alignItems: 'flex-start', gap: S.sm, marginBottom: S.xs },
@@ -3947,7 +4191,7 @@ function ProfileScreen() {
           syncStatus,
         } = useContext(UserProgressContext);
   const { authUser, isAuthenticated, signOut, updateDisplayName,
-          updatePassword, deleteAccount, userId,
+          updatePassword, deleteAccount,
         } = useContext(AuthContext);
   const { isPro, isInTrial, trialDaysRemaining, subscriptionExpiresAt, showPaywall } = useContext(PurchaseContext);
 
@@ -3962,7 +4206,7 @@ function ProfileScreen() {
   const [pwLoading,        setPwLoading]        = useState(false);
   const [pwError,          setPwError]          = useState('');
   const [pwSuccess,        setPwSuccess]        = useState(false);
-  const [avatarUploading,  setAvatarUploading]  = useState(false);
+  const [avatarUploading] = useState(false);
   const fadeAnim     = useRef(new Animated.Value(0)).current;
   const slideAnim    = useRef(new Animated.Value(20)).current;
   const toastOpacity = useRef(new Animated.Value(0)).current;
@@ -4090,46 +4334,92 @@ function ProfileScreen() {
   }
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      {/* ── Atmospheric background ── */}
+      <ImageBackground
+        source={require('./assets/hero-anyone-can.jpg')}
+        style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+        imageStyle={{ resizeMode: 'cover', opacity: 0.35, transform: [{ scale: 1.2 }, { translateX: -40 }] }}
+      />
+      {/* Layer 1: heavy base darken */}
+      <View style={{ ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(10,10,11,0.85)' }} pointerEvents="none" />
+      {/* Layer 2: vertical gradient */}
+      <LinearGradient
+        colors={['rgba(10,10,11,0.95)', 'rgba(10,10,11,0.7)', 'rgba(10,10,11,0.98)']}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        pointerEvents="none"
+      />
+      {/* Layer 3: bottom black fade */}
+      <LinearGradient
+        colors={['transparent', '#0A0A0B']}
+        style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '45%' }}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        pointerEvents="none"
+      />
+      {/* Layer 4: top black fade — keeps header clean */}
+      <LinearGradient
+        colors={['#0A0A0B', 'transparent']}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '20%' }}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        pointerEvents="none"
+      />
+      {/* Layer 5: subtle lime tint */}
+      <LinearGradient
+        colors={['rgba(215,255,61,0.05)', 'transparent']}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 1, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        pointerEvents="none"
+      />
+
+      {/* Content sits above all background layers */}
+      <View style={{ flex: 1, zIndex: 10 }}>
       <ScrollView
-        style={[pf.container, { paddingTop: insets.top }]}
+        style={{ flex: 1, paddingTop: insets.top }}
         contentContainerStyle={{ paddingBottom: 48 }}
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}
         <Animated.View style={[pf.header, { opacity: fadeAnim }]}>
-          <Text style={T.h1}>My Account</Text>
-          <View style={{ flexDirection: 'row', gap: S.sm, alignItems: 'center' }}>
-            <TouchableOpacity style={pf.editIcon} onPress={openEdit}>
-              <Ionicons name="pencil-outline" size={18} color={C.accent} />
-            </TouchableOpacity>
+          <View>
+            <Text style={[T.label, { color: C.accent }]}>MY ACCOUNT</Text>
+            <Text style={[T.h1, { fontSize: 32, fontWeight: '900', textTransform: 'uppercase' }]}>Profile</Text>
           </View>
+          <TouchableOpacity style={pf.editIcon} onPress={openEdit}>
+            <Ionicons name="pencil-outline" size={18} color={C.accent} />
+          </TouchableOpacity>
         </Animated.View>
 
         {/* Pro status banner */}
         {isPro() ? (
           <Animated.View style={[{ opacity: fadeAnim, marginHorizontal: S.md, marginBottom: S.sm }]}>
-            <LinearGradient colors={G.accent} style={pf.proBanner} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-              <Ionicons name="star" size={16} color={C.white} />
-              <Text style={[T.cap, { color: C.white, fontWeight: '700', flex: 1 }]}>
-                {isInTrial() ? 'Pro Trial Active' : 'HandstandHub Pro'}
+            <View style={pf.proBanner}>
+              <View style={pf.proBannerIconWrap}>
+                <Ionicons name="star" size={16} color={C.black} />
+              </View>
+              <Text style={[T.cap, { color: C.accent, fontWeight: '800', flex: 1 }]}>
+                {isInTrial() ? 'PRO TRIAL ACTIVE' : 'HANDSTANDHUB PRO'}
               </Text>
-              <Text style={[T.small, { color: 'rgba(255,255,255,0.75)' }]}>
+              <Text style={[T.small, { color: C.textSub }]}>
                 {isInTrial()
-                  ? `Trial ends in ${trialDaysRemaining()} day${trialDaysRemaining() !== 1 ? 's' : ''}`
+                  ? `${trialDaysRemaining()} day${trialDaysRemaining() !== 1 ? 's' : ''} left`
                   : subscriptionExpiresAt()
                     ? `Renews ${new Date(subscriptionExpiresAt()).toLocaleDateString()}`
                     : 'Active'}
               </Text>
-            </LinearGradient>
+            </View>
           </Animated.View>
         ) : (
           <Animated.View style={[{ opacity: fadeAnim, marginHorizontal: S.md, marginBottom: S.sm }]}>
             <TouchableOpacity onPress={() => showPaywall('general', '')} activeOpacity={0.85}>
               <View style={pf.upgradeRow}>
-                <Ionicons name="star-outline" size={16} color={C.gold} />
-                <Text style={[T.cap, { color: C.gold, flex: 1 }]}>Free plan · Upgrade to Pro for all features</Text>
-                <Ionicons name="chevron-forward" size={14} color={C.gold} />
+                <Ionicons name="star-outline" size={16} color={C.accent} />
+                <Text style={[T.cap, { color: C.accent, flex: 1 }]}>Free plan · Upgrade to Pro for all features</Text>
+                <Ionicons name="chevron-forward" size={14} color={C.accent} />
               </View>
             </TouchableOpacity>
           </Animated.View>
@@ -4149,17 +4439,17 @@ function ProfileScreen() {
                   />
                 </View>
               ) : (
-                <LinearGradient colors={G.accent} style={pf.avatarCircle} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+                <View style={[pf.avatarCircle, { backgroundColor: C.accentDim }]}>
                   {initials
-                    ? <Text style={pf.avatarInitials}>{initials}</Text>
+                    ? <Text style={[pf.avatarInitials, { color: C.accent }]}>{initials}</Text>
                     : <Text style={{ fontSize: 42 }}>🤸</Text>
                   }
-                </LinearGradient>
+                </View>
               )}
               <View style={pf.avatarEditBadge}>
                 {avatarUploading
-                  ? <ActivityIndicator size="small" color={C.white} />
-                  : <Ionicons name="camera-outline" size={13} color={C.white} />
+                  ? <ActivityIndicator size="small" color={C.black} />
+                  : <Ionicons name="camera-outline" size={13} color={C.black} />
                 }
               </View>
             </TouchableOpacity>
@@ -4197,43 +4487,69 @@ function ProfileScreen() {
           )}
 
           {/* Level chip */}
-          <View style={[pf.levelChip, { backgroundColor: level.color + '20', borderColor: level.color + '44' }]}>
-            <Text style={{ fontSize: 14 }}>{level.icon}</Text>
-            <Text style={[T.small, { color: level.color, fontWeight: '700' }]}>{level.name} · Level {level.id}</Text>
+          <View style={[pf.levelChip, { backgroundColor: C.accentDim, borderColor: C.accent + '44' }]}>
+            <Text style={[T.small, { color: C.accent, fontWeight: '700' }]}>LEVEL {level.id} · {level.name.toUpperCase()}</Text>
           </View>
         </Animated.View>
 
-        {/* Stats 2×2 grid */}
-        <Animated.View style={[pf.statsGrid, { opacity: fadeAnim }]}>
-          {[
-            { icon: 'star-outline',    val: `${progress.totalXP}`,              label: 'Total XP',         color: C.gold,       iconBg: C.goldDim },
-            { icon: 'flame-outline',   val: `${progress.streak}`,               label: 'Day Streak',        color: C.accent,     iconBg: C.accentDim },
-            { icon: 'videocam-outline',val: `${progress.submissions.length}`,   label: 'Submissions',        color: '#388BFD',    iconBg: 'rgba(56,139,253,0.15)' },
-            { icon: 'medal-outline',   val: `${progress.completedLevels.length}`,label: 'Levels Done',       color: C.success,    iconBg: C.successDim },
-          ].map(s => (
-            <View key={s.label} style={pf.statCard}>
-              <View style={[pf.statIcon, { backgroundColor: s.iconBg }]}>
-                <Ionicons name={s.icon} size={18} color={s.color} />
-              </View>
-              <Text style={[T.num, { color: s.color, fontSize: 30, marginTop: S.xs }]}>{s.val}</Text>
-              <Text style={[T.cap, { textAlign: 'center', marginTop: 2 }]}>{s.label}</Text>
-            </View>
-          ))}
-        </Animated.View>
+        {/* Performance Section — modern stat cards */}
+          <View style={{ marginHorizontal: S.md, marginTop: S.lg }}>
+            <Text style={[T.h3, { marginBottom: S.md }]}>Performance</Text>
 
-        {/* Consecutive streaks row (Movemate-style) */}
+            <View style={{ flexDirection: 'row', gap: S.sm }}>
+              {/* Stat 1 — Total Sessions */}
+              <View style={profileStatCard.card}>
+                <View style={profileStatCard.iconWrap}>
+                  <Ionicons name="trending-up" size={16} color={C.text} />
+                </View>
+                <Text style={profileStatCard.label}>Sessions</Text>
+                <Text style={profileStatCard.value}>{progress.submissions?.length || 0}</Text>
+              </View>
+
+              {/* Stat 2 — Current Streak (HIGHLIGHTED in lime) */}
+              <View style={[profileStatCard.card, profileStatCard.cardHighlight]}>
+                <View style={[profileStatCard.iconWrap, { backgroundColor: 'rgba(0,0,0,0.18)' }]}>
+                  <Ionicons name="flame" size={16} color={C.black} />
+                </View>
+                <Text style={[profileStatCard.label, { color: 'rgba(0,0,0,0.7)' }]}>Streak</Text>
+                <Text style={[profileStatCard.value, { color: C.black }]}>{progress.streak || 0}</Text>
+              </View>
+
+              {/* Stat 3 — Current Level */}
+              <View style={profileStatCard.card}>
+                <View style={profileStatCard.iconWrap}>
+                  <Ionicons name="trophy" size={16} color={C.text} />
+                </View>
+                <Text style={profileStatCard.label}>Level</Text>
+                <Text style={profileStatCard.value}>{progress.currentLevel || 1}</Text>
+              </View>
+            </View>
+
+            {/* Chart placeholder — will hold the progress chart */}
+            <View style={profileStatCard.chartBox}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: S.sm }}>
+                <Text style={[T.cap, { color: C.textSub }]}>Total Average</Text>
+                <Text style={[T.h3, { color: C.accent }]}>{progress.submissions?.length || 0} sessions</Text>
+              </View>
+              <View style={profileStatCard.chartPlaceholder}>
+                <Ionicons name="bar-chart-outline" size={32} color={C.textMuted} />
+                <Text style={[T.small, { color: C.textMuted, marginTop: 6 }]}>Progress chart coming soon</Text>
+              </View>
+            </View>
+          </View>
+
+        {/* Consecutive streaks row */}
         <Animated.View style={[pf.streakRow, { opacity: fadeAnim }]}>
           <View style={pf.streakItem}>
             <Text style={[T.num, { color: C.accent, fontSize: 24 }]}>{progress.streak}</Text>
-            <Text style={T.cap}>Your Consistent Streak</Text>
+            <Text style={T.cap}>Streak Days</Text>
           </View>
           <View style={pf.streakDivider} />
           <View style={pf.streakItem}>
-            <Text style={[T.num, { color: C.accentLight, fontSize: 24 }]}>
+            <Text style={[T.num, { color: C.accent, fontSize: 24 }]}>
               {(() => {
-                // Count submissions that fall within the current Mon–Sun week
                 const now = new Date();
-                const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon, …
+                const dayOfWeek = now.getDay();
                 const monday = new Date(now);
                 monday.setDate(now.getDate() - ((dayOfWeek + 6) % 7));
                 monday.setHours(0, 0, 0, 0);
@@ -4242,7 +4558,7 @@ function ProfileScreen() {
                 ).length;
               })()}
             </Text>
-            <Text style={T.cap}>This Week Sessions</Text>
+            <Text style={T.cap}>This Week</Text>
           </View>
         </Animated.View>
 
@@ -4297,7 +4613,7 @@ function ProfileScreen() {
                   </View>
                 ) : (
                   <View style={pf.subBadge}>
-                    <Text style={[T.cap, { color: C.accentLight, fontWeight: '700' }]}>Pending</Text>
+                    <Text style={[T.cap, { color: C.accent, fontWeight: '700' }]}>Pending</Text>
                   </View>
                 )}
               </View>
@@ -4446,8 +4762,8 @@ function ProfileScreen() {
                   activeOpacity={0.85}
                 >
                   <LinearGradient colors={G.accent} style={pf.modalSaveGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                    <Ionicons name="checkmark" size={14} color={C.white} />
-                    <Text style={[T.small, { color: C.white, fontWeight: '700' }]}>Save Time</Text>
+                    <Ionicons name="checkmark" size={14} color={C.black} />
+                    <Text style={[T.small, { color: C.black, fontWeight: '800' }]}>Save Time</Text>
                   </LinearGradient>
                 </TouchableOpacity>
               </View>
@@ -4468,9 +4784,9 @@ function ProfileScreen() {
             </TouchableOpacity>
 
             {/* Log Out */}
-            <TouchableOpacity style={pf.accountRow} onPress={handleSignOut} activeOpacity={0.8}>
-              <View style={pf.accountIcon}><Ionicons name="log-out-outline" size={16} color={C.gold} /></View>
-              <Text style={[T.small, { flex: 1, color: C.text }]}>Log Out</Text>
+            <TouchableOpacity style={[pf.accountRow, { borderColor: '#FF6B6B44' }]} onPress={handleSignOut} activeOpacity={0.8}>
+              <View style={[pf.accountIcon, { backgroundColor: 'rgba(255,107,107,0.12)' }]}><Ionicons name="log-out-outline" size={16} color="#FF6B6B" /></View>
+              <Text style={[T.small, { flex: 1, color: '#FF6B6B', fontWeight: '700' }]}>Sign Out</Text>
               <Ionicons name="chevron-forward" size={14} color={C.textMuted} />
             </TouchableOpacity>
 
@@ -4516,8 +4832,8 @@ function ProfileScreen() {
                     <TouchableOpacity style={pf.modalSave} onPress={handleChangePassword} activeOpacity={0.85}>
                       <LinearGradient colors={G.accent} style={pf.modalSaveGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
                         {pwLoading
-                          ? <ActivityIndicator color={C.white} size="small" />
-                          : <><Ionicons name="checkmark" size={14} color={C.white} /><Text style={[T.small, { color: C.white, fontWeight: '700' }]}>Update</Text></>
+                          ? <ActivityIndicator color={C.black} size="small" />
+                          : <><Ionicons name="checkmark" size={14} color={C.black} /><Text style={[T.small, { color: C.black, fontWeight: '800' }]}>Update</Text></>
                         }
                       </LinearGradient>
                     </TouchableOpacity>
@@ -4562,7 +4878,7 @@ function ProfileScreen() {
                 returnKeyType="done"
                 onSubmitEditing={saveName}
               />
-              <Text style={[T.cap, { textAlign: 'right', marginTop: S.xs, color: nameInput.length >= 28 ? C.gold : C.textMuted }]}>
+              <Text style={[T.cap, { textAlign: 'right', marginTop: S.xs, color: nameInput.length >= 28 ? C.accent : C.textMuted }]}>
                 {nameInput.length}/30
               </Text>
               <View style={{ flexDirection: 'row', gap: S.sm, marginTop: S.md }}>
@@ -4571,8 +4887,8 @@ function ProfileScreen() {
                 </TouchableOpacity>
                 <TouchableOpacity style={pf.modalSave} onPress={saveName} activeOpacity={0.85}>
                   <LinearGradient colors={G.accent} style={pf.modalSaveGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                    <Ionicons name="checkmark" size={14} color={C.white} />
-                    <Text style={[T.small, { color: C.white, fontWeight: '700' }]}>Save Name</Text>
+                    <Ionicons name="checkmark" size={14} color={C.black} />
+                    <Text style={[T.small, { color: C.black, fontWeight: '800' }]}>Save Name</Text>
                   </LinearGradient>
                 </TouchableOpacity>
               </View>
@@ -4586,9 +4902,69 @@ function ProfileScreen() {
         <Ionicons name="checkmark-circle" size={15} color={C.white} />
         <Text style={[T.small, { color: C.white, fontWeight: '700' }]}>{toastMsg}</Text>
       </Animated.View>
+      </View>{/* end zIndex:10 content wrapper */}
     </View>
   );
 }
+
+const profileStatCard = StyleSheet.create({
+  card: {
+    flex: 1,
+    backgroundColor: C.bgCard,
+    borderRadius: 20,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    minHeight: 100,
+    justifyContent: 'space-between',
+  },
+  cardHighlight: {
+    backgroundColor: C.accent,
+    borderColor: C.accent,
+    shadowColor: C.accent,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  iconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: C.bgCardAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  label: {
+    fontSize: 11,
+    color: C.textSub,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginTop: 8,
+  },
+  value: {
+    fontSize: 28,
+    fontWeight: '900',
+    color: C.text,
+    letterSpacing: -0.5,
+  },
+  chartBox: {
+    backgroundColor: C.bgCard,
+    borderRadius: 20,
+    padding: S.md,
+    marginTop: S.sm,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  chartPlaceholder: {
+    height: 120,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.bgDeep,
+    borderRadius: 12,
+  },
+});
 
 const pf = StyleSheet.create({
   container:      { flex: 1, backgroundColor: C.bg },
@@ -4598,13 +4974,10 @@ const pf = StyleSheet.create({
   avatarRing:     { width: 118, height: 118, borderRadius: 59, borderWidth: 3, borderColor: C.accent, alignItems: 'center', justifyContent: 'center' },
   avatarWrap:     { position: 'relative', width: 108, height: 108 },
   avatarCircle:   { width: 108, height: 108, borderRadius: 54, alignItems: 'center', justifyContent: 'center' },
-  avatarInitials: { fontSize: 40, fontWeight: '900', color: C.white },
+  avatarInitials: { fontSize: 40, fontWeight: '900', color: C.accent },
   avatarEditBadge:{ position: 'absolute', bottom: 4, right: 4, width: 26, height: 26, borderRadius: 13, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: C.bg },
   editNameBtn:    { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: S.sm, paddingHorizontal: S.md, paddingVertical: S.xs, borderRadius: R.full, backgroundColor: C.accentDim, borderWidth: 1, borderColor: C.accent + '44' },
   levelChip:      { flexDirection: 'row', alignItems: 'center', gap: S.xs, marginTop: S.sm, paddingHorizontal: S.md, paddingVertical: S.xs, borderRadius: R.full, borderWidth: 1 },
-  statsGrid:      { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: S.md, gap: S.sm, marginTop: S.sm },
-  statCard:       { width: (width - S.md * 2 - S.sm) / 2, minHeight: 100, backgroundColor: C.bgCard, borderRadius: R.xl, padding: S.md, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.border },
-  statIcon:       { width: 38, height: 38, borderRadius: R.full, alignItems: 'center', justifyContent: 'center' },
   streakRow:      { flexDirection: 'row', alignItems: 'center', marginHorizontal: S.md, marginTop: S.md, backgroundColor: C.bgCard, borderRadius: R.xl, borderWidth: 1, borderColor: C.border, overflow: 'hidden' },
   streakItem:     { flex: 1, alignItems: 'center', paddingVertical: S.md },
   streakDivider:  { width: 1, height: '60%', backgroundColor: C.border },
@@ -4629,8 +5002,9 @@ const pf = StyleSheet.create({
   syncChip:       { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: S.xs, paddingHorizontal: S.sm, paddingVertical: 4, borderRadius: R.full, borderWidth: 1 },
   accountRow:     { flexDirection: 'row', alignItems: 'center', gap: S.sm, backgroundColor: C.bgCard, borderRadius: R.lg, padding: S.md, borderWidth: 1, borderColor: C.border },
   accountIcon:    { width: 34, height: 34, borderRadius: R.lg, backgroundColor: C.accentDim, alignItems: 'center', justifyContent: 'center' },
-  proBanner:      { flexDirection: 'row', alignItems: 'center', gap: S.sm, paddingHorizontal: S.md, paddingVertical: S.sm, borderRadius: R.lg },
-  upgradeRow:     { flexDirection: 'row', alignItems: 'center', gap: S.sm, backgroundColor: C.goldDim, paddingHorizontal: S.md, paddingVertical: S.sm, borderRadius: R.lg, borderWidth: 1, borderColor: C.gold + '33' },
+  proBanner:      { flexDirection: 'row', alignItems: 'center', gap: S.sm, paddingHorizontal: S.md, paddingVertical: S.sm, borderRadius: R.lg, backgroundColor: C.bgCard, borderWidth: 1, borderColor: C.accent + '44' },
+  proBannerIconWrap: { width: 28, height: 28, borderRadius: 14, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' },
+  upgradeRow:     { flexDirection: 'row', alignItems: 'center', gap: S.sm, backgroundColor: C.accentDim, paddingHorizontal: S.md, paddingVertical: S.sm, borderRadius: R.lg, borderWidth: 1, borderColor: C.accent + '44' },
   resetBtn:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: S.sm, backgroundColor: C.errorDim, borderRadius: R.lg, paddingVertical: S.md, borderWidth: 1, borderColor: C.error + '40' },
   toast:          { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: S.xs, backgroundColor: C.success, paddingHorizontal: S.lg, paddingVertical: S.sm, borderRadius: R.full, elevation: 8, shadowColor: C.black, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 6 },
   // Notification styles
@@ -4697,8 +5071,8 @@ function OnboardingScreen({ onComplete }) {
       style={[ob.container, { paddingTop: insets.top, paddingBottom: insets.bottom + S.lg }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      {/* Gradient background */}
-      <LinearGradient colors={['#0D1117', '#161B22', '#1C2333']} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0.5, y: 1 }} />
+      {/* Dark background */}
+      <LinearGradient colors={[C.bg, '#0D0D0F', C.bg]} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0.5, y: 1 }} />
 
       {/* Decorative circles */}
       <View style={ob.deco1} />
@@ -4718,9 +5092,9 @@ function OnboardingScreen({ onComplete }) {
         {/* STEP 0 – Welcome */}
         {step === 0 && (
           <View style={ob.slide}>
-            <LinearGradient colors={G.accent} style={ob.logoBg} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+            <View style={ob.logoBg}>
               <Text style={{ fontSize: 52 }}>🤸</Text>
-            </LinearGradient>
+            </View>
             <Text style={[T.label, { color: C.accent, marginTop: S.xl, marginBottom: S.sm }]}>WELCOME TO</Text>
             <Text style={[T.h1, { fontSize: 38, textAlign: 'center', marginBottom: S.sm }]}>HandstandHub</Text>
             <Text style={[T.h3, { color: C.textSub, fontWeight: '400', textAlign: 'center', lineHeight: 28 }]}>
@@ -4813,8 +5187,8 @@ function OnboardingScreen({ onComplete }) {
         {step === 0 && (
           <TouchableOpacity style={ob.primaryBtn} onPress={() => animateTo(1)} activeOpacity={0.85}>
             <LinearGradient colors={G.accent} style={ob.primaryGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-              <Text style={[T.h4, { color: C.white, fontSize: 16 }]}>Let's Go</Text>
-              <Ionicons name="arrow-forward" size={18} color={C.white} />
+              <Text style={[T.h4, { color: C.black, fontSize: 16, fontWeight: '900' }]}>LET'S GO</Text>
+              <Ionicons name="arrow-forward" size={18} color={C.black} />
             </LinearGradient>
           </TouchableOpacity>
         )}
@@ -4825,8 +5199,8 @@ function OnboardingScreen({ onComplete }) {
             activeOpacity={0.85}
           >
             <LinearGradient colors={G.accent} style={ob.primaryGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-              <Text style={[T.h4, { color: C.white, fontSize: 16 }]}>Continue</Text>
-              <Ionicons name="arrow-forward" size={18} color={C.white} />
+              <Text style={[T.h4, { color: C.black, fontSize: 16, fontWeight: '900' }]}>CONTINUE</Text>
+              <Ionicons name="arrow-forward" size={18} color={C.black} />
             </LinearGradient>
           </TouchableOpacity>
         )}
@@ -4834,8 +5208,8 @@ function OnboardingScreen({ onComplete }) {
           <View style={{ width: '100%', gap: S.sm }}>
             <TouchableOpacity style={ob.primaryBtn} onPress={() => animateTo(3)} activeOpacity={0.85}>
               <LinearGradient colors={G.accent} style={ob.primaryGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                <Text style={[T.h4, { color: C.white, fontSize: 16 }]}>Continue</Text>
-                <Ionicons name="arrow-forward" size={18} color={C.white} />
+                <Text style={[T.h4, { color: C.black, fontSize: 16, fontWeight: '900' }]}>CONTINUE</Text>
+                <Ionicons name="arrow-forward" size={18} color={C.black} />
               </LinearGradient>
             </TouchableOpacity>
             <TouchableOpacity style={ob.skipBtn} onPress={() => animateTo(3)} activeOpacity={0.7}>
@@ -4859,8 +5233,8 @@ function OnboardingScreen({ onComplete }) {
               activeOpacity={0.85}
             >
               <LinearGradient colors={G.accent} style={ob.primaryGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                <Text style={[T.h4, { color: C.white, fontSize: 16 }]}>Enable Reminders</Text>
-                <Text style={{ fontSize: 18 }}>🔔</Text>
+                <Text style={[T.h4, { color: C.black, fontSize: 16, fontWeight: '900' }]}>ENABLE REMINDERS</Text>
+                <Ionicons name="notifications-outline" size={18} color={C.black} />
               </LinearGradient>
             </TouchableOpacity>
             <TouchableOpacity style={ob.skipBtn} onPress={finish} activeOpacity={0.7}>
@@ -4884,7 +5258,7 @@ const ob = StyleSheet.create({
   dotDone:        { backgroundColor: C.accent + '55' },
   content:        { flex: 1, alignItems: 'center', justifyContent: 'center', width: '100%', paddingHorizontal: S.lg },
   slide:          { alignItems: 'center', width: '100%' },
-  logoBg:         { width: 100, height: 100, borderRadius: 30, alignItems: 'center', justifyContent: 'center', shadowColor: C.accent, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.5, shadowRadius: 20, elevation: 12 },
+  logoBg:         { width: 100, height: 100, borderRadius: 30, backgroundColor: C.accentDim, borderWidth: 1, borderColor: C.accent + '44', alignItems: 'center', justifyContent: 'center', shadowColor: C.accent, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 20, elevation: 12 },
   levelPill:      { flexDirection: 'row', alignItems: 'center', gap: S.md, backgroundColor: C.bgCard, borderRadius: R.xxl, padding: S.md, marginBottom: S.sm, borderWidth: 2, borderColor: C.border, width: '100%' },
   levelPillActive:{ borderColor: C.accent, backgroundColor: C.accentDim },
   radio:          { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: C.borderLight, alignItems: 'center', justifyContent: 'center' },
@@ -4912,7 +5286,7 @@ function BarChart({ data, color = C.accent, maxValue, height: chartH = 100 }) {
           <View key={i} style={{ flex: 1, alignItems: 'center', justifyContent: 'flex-end', height: chartH }}>
             <View style={{
               width: '100%', height: barH,
-              backgroundColor: item.isHighlight ? C.gold : color,
+              backgroundColor: item.isHighlight ? C.accent : color,
               borderRadius: 4,
               opacity: item.value === 0 ? 0.15 : 1,
             }} />
@@ -5047,6 +5421,9 @@ function ContribHeatmap({ submissions }) {
 function ProgressScreen() {
   const insets = useSafeAreaInsets();
   const { progress } = useContext(UserProgressContext);
+  const { isPro } = useContext(PurchaseContext);
+  const { computeForgivingStreak } = useContext(MilestoneContext);
+  const { streak: forgivingStreak, frozen } = computeForgivingStreak(progress);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useFocusEffect(useCallback(() => {
@@ -5111,22 +5488,23 @@ function ProgressScreen() {
         <Animated.View style={{ opacity: fadeAnim }}>
           {/* Header */}
           <View style={pg.header}>
-            <Text style={[T.label, { color: C.accent }]}>YOUR DATA</Text>
-            <Text style={T.h2}>Progress</Text>
+            <Text style={[T.label, { color: C.accent }]}>YOUR JOURNEY SO FAR</Text>
+            <Text style={[T.h2, { fontSize: 32, fontWeight: '900', textTransform: 'uppercase' }]}>PROGRESS</Text>
           </View>
 
-          {/* Personal Records Grid */}
-          <View style={pg.section}>
-            <Text style={[T.h4, { marginBottom: S.sm }]}>Personal Records</Text>
-            <View style={pg.recordsGrid}>
-              {records.map(r => (
-                <View key={r.label} style={pg.recordCard}>
-                  <Text style={{ fontSize: 22, marginBottom: S.xs }}>{r.icon}</Text>
-                  <Text style={[T.num, { fontSize: 22, color: C.accent }]}>{r.val}</Text>
-                  <Text style={[T.cap, { textAlign: 'center', marginTop: 2 }]}>{r.label}</Text>
-                </View>
-              ))}
-            </View>
+          {/* 3-stat row */}
+          <View style={{ flexDirection: 'row', gap: 12, marginTop: 24, paddingHorizontal: 20 }}>
+            {[
+              { icon: 'barbell-outline', val: progress.submissions.length, label: 'TOTAL WORKOUTS' },
+              { icon: 'time-outline',    val: Math.round(progress.submissions.length * 0.25), label: 'HOURS TRAINED' },
+              { icon: frozen ? 'snow-outline' : 'flame-outline', val: forgivingStreak, label: 'DAY STREAK' },
+            ].map(s => (
+              <View key={s.label} style={hd.statCard}>
+                <Ionicons name={s.icon} size={24} color={C.accent} />
+                <Text style={hd.statNum}>{s.val}</Text>
+                <Text style={hd.statLabel}>{s.label}</Text>
+              </View>
+            ))}
           </View>
 
           {/* Sessions per week bar chart */}
@@ -5160,17 +5538,17 @@ function ProgressScreen() {
             <Text style={[T.h4, { marginBottom: S.sm }]}>Level Progression</Text>
             {levelTimeline.map((item, i) => (
               <View key={item.level.id} style={pg.timelineRow}>
-                <View style={[pg.timelineDot, { backgroundColor: item.done ? item.level.color : C.bgCardAlt, borderColor: item.done ? item.level.color : C.border }]}>
-                  {item.done && <Ionicons name="checkmark" size={11} color={C.white} />}
+                <View style={[pg.timelineDot, { backgroundColor: item.done ? C.accent : C.bgCardAlt, borderColor: item.done ? C.accent : C.border }]}>
+                  {item.done && <Ionicons name="checkmark" size={11} color={C.black} />}
                 </View>
                 {i < levelTimeline.length - 1 && (
-                  <View style={[pg.timelineLine, { backgroundColor: item.done ? C.success : C.border }]} />
+                  <View style={[pg.timelineLine, { backgroundColor: item.done ? C.accent + '66' : C.border }]} />
                 )}
                 <View style={pg.timelineContent}>
                   <Text style={[T.h4, { fontSize: 13, color: item.done ? C.text : C.textMuted }]}>
-                    {item.level.icon} Level {item.level.id} — {item.level.name}
+                    Level {item.level.id} — {item.level.name}
                   </Text>
-                  <Text style={[T.cap, { color: item.done ? C.success : C.textMuted }]}>
+                  <Text style={[T.cap, { color: item.done ? C.accent : C.textMuted }]}>
                     {item.done ? '✓ Completed' : 'Not yet completed'}
                   </Text>
                 </View>
@@ -5217,6 +5595,7 @@ function ProgressScreen() {
           })()}
         </Animated.View>
       </ScrollView>
+      {!isPro() && <ProLockOverlay featureLabel="Progress Charts" featureIcon="📊" />}
     </View>
   );
 }
@@ -5333,9 +5712,64 @@ function isTodayTrainingDay(trainingDays) {
   return trainingDays.includes(idx);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SHARED: ProLockOverlay — sneak-peek lock for Pro-gated screens
+// ─────────────────────────────────────────────────────────────────────────────
+function ProLockOverlay({ featureLabel, featureIcon }) {
+  const { showPaywall } = useContext(PurchaseContext);
+  return (
+    <View style={pl.overlay}>
+      <View style={pl.card}>
+        {/* Icon circle with lock badge */}
+        <View style={pl.iconWrap}>
+          <View style={pl.iconCircle}>
+            <Text style={{ fontSize: 42 }}>{featureIcon}</Text>
+          </View>
+          <View style={pl.lockBadge}>
+            <Ionicons name="lock-closed" size={12} color={C.accent} />
+          </View>
+        </View>
+
+        <Text style={[T.h2, { textAlign: 'center', marginTop: S.lg }]}>
+          Unlock {featureLabel}
+        </Text>
+        <Text style={[T.body, { color: C.textMuted, textAlign: 'center', marginTop: S.xs, lineHeight: 20 }]}>
+          Get full access with HandstandHub Pro
+        </Text>
+
+        <TouchableOpacity
+          style={pl.ctaBtn}
+          onPress={() => showPaywall('level_lock', featureLabel)}
+          activeOpacity={0.85}
+        >
+          <LinearGradient colors={G.accent} style={pl.ctaGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+            <Ionicons name="star" size={15} color={C.black} />
+            <Text style={[T.h4, { color: C.black, fontSize: 15, fontWeight: '900' }]}>Upgrade to Pro</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+
+        <Text style={[T.small, { color: C.textMuted, marginTop: S.sm }]}>
+          7-day free trial · Cancel anytime
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+const pl = StyleSheet.create({
+  overlay:     { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(13,17,23,0.82)', alignItems: 'center', justifyContent: 'center', zIndex: 10 },
+  card:        { backgroundColor: C.bgCard, borderRadius: R.xxl, padding: S.xl, marginHorizontal: S.xl, borderWidth: 1, borderColor: C.border, alignItems: 'center', width: '85%' },
+  iconWrap:    { position: 'relative', marginBottom: S.xs },
+  iconCircle:  { width: 88, height: 88, borderRadius: 44, backgroundColor: C.bgDeep, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
+  lockBadge:   { position: 'absolute', bottom: 2, right: 2, width: 24, height: 24, borderRadius: 12, backgroundColor: C.accentDim, borderWidth: 1.5, borderColor: C.accent + '88', alignItems: 'center', justifyContent: 'center' },
+  ctaBtn:      { width: '100%', borderRadius: R.xl, overflow: 'hidden', marginTop: S.lg },
+  ctaGrad:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: S.sm, paddingVertical: S.md + 2 },
+});
+
 function WeeklyPlanScreen({ navigation }) {
   const insets  = useSafeAreaInsets();
   const { progress } = useContext(UserProgressContext);
+  const { isPro } = useContext(PurchaseContext);
   const [plan,        setPlanState]  = useState(null);
   const [loading,     setLoading]    = useState(true);
   const [activePhase, setActivePhase] = useState(null); // index into sessions
@@ -5395,8 +5829,8 @@ function WeeklyPlanScreen({ navigation }) {
         {/* Header */}
         <View style={wp.header}>
           <View>
-            <Text style={[T.label, { color: C.accent }]}>YOUR PROGRAM</Text>
-            <Text style={T.h2}>Weekly Plan</Text>
+            <Text style={[T.label, { color: C.accent }]}>YOUR TRAINING PLAN</Text>
+            <Text style={[T.h2, { fontSize: 32, fontWeight: '900', textTransform: 'uppercase' }]}>THIS WEEK</Text>
           </View>
           <View style={[wp.weekBadge, { backgroundColor: C.accentDim, borderColor: C.accent + '44' }]}>
             <Text style={[T.small, { color: C.accent, fontWeight: '700' }]}>Week {weekOffset + 1}</Text>
@@ -5405,10 +5839,10 @@ function WeeklyPlanScreen({ navigation }) {
 
         {/* Week label card */}
         <View style={wp.focusCard}>
-          <LinearGradient colors={G.accent} style={wp.focusGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-            <Text style={[T.label, { color: 'rgba(255,255,255,0.8)', marginBottom: 4 }]}>CURRENT PROGRAM</Text>
-            <Text style={[T.h3, { color: C.white, marginBottom: 4 }]}>{programWeek.label}</Text>
-            <Text style={[T.small, { color: 'rgba(255,255,255,0.85)', lineHeight: 18 }]}>{programWeek.focus}</Text>
+          <LinearGradient colors={['#1C1D21', '#16171A']} style={wp.focusGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+            <Text style={[T.label, { color: C.accent, marginBottom: 4 }]}>CURRENT PROGRAM</Text>
+            <Text style={[T.h3, { color: C.text, marginBottom: 4 }]}>{programWeek.label}</Text>
+            <Text style={[T.small, { color: C.textSub, lineHeight: 18 }]}>{programWeek.focus}</Text>
           </LinearGradient>
         </View>
 
@@ -5428,15 +5862,15 @@ function WeeklyPlanScreen({ navigation }) {
               return (
                 <TouchableOpacity
                   key={label}
-                  style={[wp.dayCell, isTrain && wp.dayCellActive, isToday && wp.dayCellToday]}
+                  style={[wp.dayCell, isToday && wp.dayCellToday, isTrain && !isToday && wp.dayCellActive]}
                   onPress={() => toggleDay(idx)}
                   activeOpacity={0.75}
                 >
-                  <Text style={[T.cap, { color: isTrain ? C.white : C.textMuted, fontWeight: isTrain ? '700' : '400' }]}>{label}</Text>
+                  <Text style={[T.cap, { color: isToday ? C.black : isTrain ? C.accent : C.textMuted, fontWeight: isToday || isTrain ? '700' : '400', fontSize: 10 }]}>{label}</Text>
                   {done
-                    ? <Ionicons name="checkmark-circle" size={14} color={C.success} style={{ marginTop: 2 }} />
-                    : isTrain
-                      ? <View style={[wp.dayDot, { backgroundColor: isToday ? C.white : 'rgba(255,255,255,0.5)' }]} />
+                    ? <Ionicons name="checkmark-circle" size={14} color={isToday ? C.black : C.accent} style={{ marginTop: 2 }} />
+                    : isTrain || isToday
+                      ? <View style={[wp.dayDot, { backgroundColor: isToday ? C.black : C.accent }]} />
                       : <View style={[wp.dayDot, { backgroundColor: C.border }]} />
                   }
                 </TouchableOpacity>
@@ -5466,7 +5900,7 @@ function WeeklyPlanScreen({ navigation }) {
           {isTrainingDay && !sessionDone && (
             <TouchableOpacity style={wp.startBtn} onPress={markTodayDone} activeOpacity={0.85}>
               <LinearGradient colors={G.accent} style={wp.startGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                <Text style={[T.cap, { color: C.white, fontWeight: '700' }]}>Done</Text>
+                <Text style={[T.cap, { color: C.black, fontWeight: '800' }]}>Done</Text>
               </LinearGradient>
             </TouchableOpacity>
           )}
@@ -5502,8 +5936,8 @@ function WeeklyPlanScreen({ navigation }) {
                         activeOpacity={0.85}
                       >
                         <LinearGradient colors={G.accent} style={wp.recordGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                          <Ionicons name="videocam" size={14} color={C.white} />
-                          <Text style={[T.cap, { color: C.white, fontWeight: '700' }]}>Record This Skill</Text>
+                          <Ionicons name="videocam" size={14} color={C.black} />
+                          <Text style={[T.cap, { color: C.black, fontWeight: '800' }]}>Record This Skill</Text>
                         </LinearGradient>
                       </TouchableOpacity>
                     )}
@@ -5513,18 +5947,13 @@ function WeeklyPlanScreen({ navigation }) {
             ))}
           </>
         ) : (
-          <>
-            <Text style={[T.h4, { marginHorizontal: S.md, marginTop: S.lg, marginBottom: S.sm }]}>Active Recovery</Text>
-            {REST_ACTIVITIES.map(act => (
-              <View key={act.title} style={wp.restCard}>
-                <Text style={{ fontSize: 28, width: 40, textAlign: 'center' }}>{act.icon}</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={[T.h4, { fontSize: 13 }]}>{act.title}</Text>
-                  <Text style={[T.small, { lineHeight: 18 }]}>{act.desc}</Text>
-                </View>
-              </View>
-            ))}
-          </>
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60 }}>
+            <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: C.accentDim, alignItems: 'center', justifyContent: 'center', shadowColor: '#D7FF3D', shadowOpacity: 0.3, shadowRadius: 20, shadowOffset: { width: 0, height: 0 }, elevation: 0, marginBottom: 20 }}>
+              <Ionicons name="moon" size={40} color={C.accent} />
+            </View>
+            <Text style={{ fontSize: 24, fontWeight: '900', color: C.white, letterSpacing: -0.5, textTransform: 'uppercase', marginBottom: 8 }}>REST DAY</Text>
+            <Text style={{ fontSize: 14, fontWeight: '500', color: C.textMuted, textAlign: 'center' }}>Recovery is part of training</Text>
+          </View>
         )}
 
         {/* Program progress */}
@@ -5550,6 +5979,7 @@ function WeeklyPlanScreen({ navigation }) {
           </View>
         </View>
       </ScrollView>
+      {!isPro() && <ProLockOverlay featureLabel="Weekly Training Plan" featureIcon="📋" />}
     </View>
   );
 }
@@ -5557,17 +5987,17 @@ function WeeklyPlanScreen({ navigation }) {
 const wp = StyleSheet.create({
   header:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: S.md, paddingTop: S.md, paddingBottom: S.sm },
   weekBadge:      { paddingHorizontal: S.sm, paddingVertical: 4, borderRadius: R.full, borderWidth: 1 },
-  focusCard:      { marginHorizontal: S.md, marginBottom: S.md, borderRadius: R.xl, overflow: 'hidden' },
+  focusCard:      { marginHorizontal: S.md, marginBottom: S.md, borderRadius: R.xl, overflow: 'hidden', borderWidth: 1, borderColor: C.border },
   focusGrad:      { padding: S.lg },
   calSection:     { marginHorizontal: S.md, marginBottom: S.md },
   dayRow:         { flexDirection: 'row', gap: S.xs },
   dayCell:        { flex: 1, alignItems: 'center', paddingVertical: S.sm, borderRadius: R.lg, backgroundColor: C.bgCard, borderWidth: 1, borderColor: C.border },
-  dayCellActive:  { backgroundColor: C.accent, borderColor: C.accent },
-  dayCellToday:   { borderWidth: 2, borderColor: C.gold },
+  dayCellActive:  { backgroundColor: C.bgCardElevated, borderColor: C.accent + '66' },
+  dayCellToday:   { backgroundColor: C.accent, borderColor: C.accent, borderWidth: 2 },
   dayDot:         { width: 5, height: 5, borderRadius: 3, marginTop: 3 },
   todayCard:      { flexDirection: 'row', alignItems: 'center', gap: S.sm, marginHorizontal: S.md, marginBottom: S.md, padding: S.md, backgroundColor: C.bgCard, borderRadius: R.xl, borderWidth: 1 },
   todayIcon:      { width: 48, height: 48, borderRadius: R.lg, alignItems: 'center', justifyContent: 'center' },
-  startBtn:       { borderRadius: R.lg, overflow: 'hidden' },
+  startBtn:       { borderRadius: R.full, overflow: 'hidden' },
   startGrad:      { paddingHorizontal: S.md, paddingVertical: S.sm },
   phaseCard:      { marginHorizontal: S.md, marginBottom: S.xs, backgroundColor: C.bgCard, borderRadius: R.lg, borderWidth: 1, borderColor: C.border, overflow: 'hidden' },
   phaseCardActive:{ borderColor: C.accent + '66' },
@@ -5576,9 +6006,9 @@ const wp = StyleSheet.create({
   phaseDivider:   { height: 1, backgroundColor: C.border, marginBottom: S.sm },
   exRow:          { flexDirection: 'row', alignItems: 'flex-start', gap: S.sm, marginBottom: S.xs },
   exBullet:       { width: 6, height: 6, borderRadius: 3, backgroundColor: C.accent, marginTop: 7 },
-  recordCta:      { marginTop: S.sm, borderRadius: R.lg, overflow: 'hidden' },
+  recordCta:      { marginTop: S.sm, borderRadius: R.full, overflow: 'hidden' },
   recordGrad:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: S.xs, paddingVertical: S.sm },
-  restCard:       { flexDirection: 'row', alignItems: 'flex-start', gap: S.sm, marginHorizontal: S.md, marginBottom: S.xs, padding: S.md, backgroundColor: C.bgCard, borderRadius: R.lg, borderWidth: 1, borderColor: C.border },
+  restCard:       { flexDirection: 'row', alignItems: 'flex-start', gap: S.sm, marginHorizontal: S.md, marginBottom: S.xs, padding: S.md, backgroundColor: C.bgCard, borderRadius: R.xl, borderWidth: 1, borderColor: C.border },
   progressSection:{ marginHorizontal: S.md },
   progressHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: S.sm },
   weeksList:      { marginTop: S.sm, gap: S.xs },
@@ -5621,7 +6051,7 @@ function AuthButton({ label, onPress, loading, secondary, style }) {
     <TouchableOpacity style={[au.primaryBtn, loading && { opacity: 0.6 }, style]} onPress={onPress} disabled={loading} activeOpacity={0.85}>
       <LinearGradient colors={G.accent} style={au.primaryGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
         {loading
-          ? <ActivityIndicator color={C.white} size="small" />
+          ? <ActivityIndicator color={C.black} size="small" />
           : <Text style={au.primaryLabel}>{label}</Text>}
       </LinearGradient>
     </TouchableOpacity>
@@ -5647,9 +6077,9 @@ function WelcomeScreen({ navigation }) {
       <View style={au.deco1} /><View style={au.deco2} />
 
       <Animated.View style={[au.welcomeContent, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-        <LinearGradient colors={G.accent} style={au.welcomeLogo} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+        <View style={au.welcomeLogo}>
           <Text style={{ fontSize: 52 }}>🤸</Text>
-        </LinearGradient>
+        </View>
         <Text style={[T.label, { color: C.accent, marginTop: S.xl, letterSpacing: 2 }]}>WELCOME TO</Text>
         <Text style={[T.h1, { fontSize: 36, textAlign: 'center', marginTop: S.xs }]}>HandstandHub</Text>
         <Text style={[T.body, { textAlign: 'center', maxWidth: 280, marginTop: S.md, lineHeight: 22 }]}>
@@ -5901,7 +6331,7 @@ const au = StyleSheet.create({
   deco1:         { position: 'absolute', width: 280, height: 280, borderRadius: 140, backgroundColor: C.accent + '07', top: -80, right: -80 },
   deco2:         { position: 'absolute', width: 200, height: 200, borderRadius: 100, backgroundColor: C.accent + '05', bottom: 40, left: -60 },
   welcomeContent:{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: S.lg },
-  welcomeLogo:   { width: 100, height: 100, borderRadius: 30, alignItems: 'center', justifyContent: 'center', shadowColor: C.accent, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.5, shadowRadius: 20, elevation: 12 },
+  welcomeLogo:   { width: 100, height: 100, borderRadius: 30, backgroundColor: C.accentDim, borderWidth: 1, borderColor: C.accent + '44', alignItems: 'center', justifyContent: 'center', shadowColor: C.accent, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 20, elevation: 12 },
   formScroll:    { flexGrow: 1, paddingHorizontal: S.lg, paddingTop: S.lg, paddingBottom: S.xl },
   backBtn:       { width: 36, height: 36, borderRadius: R.full, backgroundColor: C.bgCard, alignItems: 'center', justifyContent: 'center', marginBottom: S.xl, borderWidth: 1, borderColor: C.border },
   input:         { backgroundColor: C.bgCard, borderRadius: R.lg, paddingHorizontal: S.md, paddingVertical: S.md, fontSize: 15, color: C.text, borderWidth: 1, borderColor: C.border, marginBottom: S.xs },
@@ -5912,7 +6342,7 @@ const au = StyleSheet.create({
   successBox:    { backgroundColor: C.successDim, borderRadius: R.xl, padding: S.lg, alignItems: 'center', borderWidth: 1, borderColor: C.success + '44', marginBottom: S.lg },
   primaryBtn:    { borderRadius: R.xxl, overflow: 'hidden' },
   primaryGrad:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: S.md + 2, gap: S.sm },
-  primaryLabel:  { fontSize: 15, fontWeight: '800', color: C.white },
+  primaryLabel:  { fontSize: 15, fontWeight: '900', color: C.black, textTransform: 'uppercase' },
   secondaryBtn:  { alignItems: 'center', paddingVertical: S.md, borderRadius: R.xxl, borderWidth: 1, borderColor: C.borderLight },
   secondaryLabel:{ fontSize: 15, fontWeight: '700', color: C.text },
   switchRow:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: S.md },
@@ -5938,7 +6368,7 @@ function CustomTabBar({ state, descriptors, navigation }) {
   const PRO_TABS = new Set(['Plan', 'Progress']);
 
   return (
-    <View style={[tb.bar, { paddingBottom: insets.bottom > 0 ? insets.bottom : S.md }]}>
+    <View style={[tb.bar, { paddingBottom: insets.bottom > 0 ? insets.bottom + 8 : 16 }]}>
       {state.routes.map((route, index) => {
         const { options } = descriptors[route.key];
         const label = options.tabBarLabel ?? route.name;
@@ -5954,31 +6384,25 @@ function CustomTabBar({ state, descriptors, navigation }) {
         }[route.name];
 
         const onPress = () => {
-          if (isProTab) {
-            showPaywall('feature', `${label} — Pro feature`);
-            return;
-          }
+          // Always allow navigation — Pro tabs show a sneak-peek with an in-screen overlay
           const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
           if (!isFocused && !event.defaultPrevented) navigation.navigate(route.name);
         };
 
         return (
-          <TouchableOpacity key={route.key} onPress={onPress} style={tb.tabItem} activeOpacity={0.8}>
+          <TouchableOpacity key={route.key} onPress={onPress} style={tb.tabItem} activeOpacity={0.7}>
             {isFocused ? (
-              <LinearGradient colors={G.accent} style={tb.activePill} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                <Ionicons name={iconName} size={18} color={C.white} />
-                <Text style={tb.activeLabel}>{label}</Text>
-              </LinearGradient>
+              <View style={tb.activeCircle}>
+                <Ionicons name={iconName} size={22} color={C.black} />
+              </View>
             ) : (
               <View style={tb.inactiveItem}>
-                <View style={{ position: 'relative' }}>
-                  <Ionicons name={iconName} size={22} color={isProTab ? C.textMuted : C.textMuted} style={isProTab && { opacity: 0.5 }} />
-                  {isProTab && (
-                    <View style={tb.proTabDot}>
-                      <Text style={{ fontSize: 7, color: C.gold, fontWeight: '900' }}>★</Text>
-                    </View>
-                  )}
-                </View>
+                <Ionicons name={iconName} size={22} color={isProTab ? C.textMuted + '88' : C.textMuted} />
+                {isProTab && (
+                  <View style={tb.proTabDot}>
+                    <Text style={{ fontSize: 6, color: C.accent, fontWeight: '900' }}>★</Text>
+                  </View>
+                )}
               </View>
             )}
           </TouchableOpacity>
@@ -5989,12 +6413,11 @@ function CustomTabBar({ state, descriptors, navigation }) {
 }
 
 const tb = StyleSheet.create({
-  bar:         { flexDirection: 'row', backgroundColor: C.bgDeep, borderTopWidth: 1, borderTopColor: C.border, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: S.sm, paddingHorizontal: S.md, gap: S.xs },
-  tabItem:     { flex: 1, alignItems: 'center' },
-  activePill:  { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: S.md, paddingVertical: S.sm, borderRadius: R.full },
-  activeLabel: { fontSize: 12, fontWeight: '700', color: C.white },
-  inactiveItem:{ paddingVertical: S.sm, paddingHorizontal: S.md, alignItems: 'center' },
-  proTabDot:   { position: 'absolute', top: -3, right: -4, width: 13, height: 13, borderRadius: 7, backgroundColor: C.goldDim, borderWidth: 1, borderColor: C.gold + '66', alignItems: 'center', justifyContent: 'center' },
+  bar:          { flexDirection: 'row', backgroundColor: C.bgDeep, borderTopWidth: 1, borderTopColor: C.border, paddingTop: 12, paddingHorizontal: S.md },
+  tabItem:      { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  activeCircle: { width: 48, height: 48, borderRadius: 24, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' },
+  inactiveItem: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center', position: 'relative' },
+  proTabDot:    { position: 'absolute', top: 6, right: 6, width: 12, height: 12, borderRadius: 6, backgroundColor: C.bgCard, borderWidth: 1, borderColor: C.accent + '80', alignItems: 'center', justifyContent: 'center' },
 });
 
 function HomeTabs() {

@@ -44,7 +44,8 @@
           "microphonePermission": "HandstandHub needs microphone access for video recording."
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      "expo-secure-store"
     ]
   }
 }
