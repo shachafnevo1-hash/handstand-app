@@ -40,6 +40,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
+import * as ImagePicker from 'expo-image-picker';
 import NetInfo from '@react-native-community/netinfo';
 import { createClient } from '@supabase/supabase-js';
 
@@ -1190,6 +1191,7 @@ const NOTIFICATIONS_KEY  = '@handstandai_notifications';
 const AI_QUEUE_KEY       = '@handstandai_ai_queue';
 const PLAN_KEY           = '@handstandai_plan';
 const MIGRATION_KEY      = '@handstandai_migrated';
+const AVATAR_KEY         = 'user_avatar_uri';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FEATURE 4 – OFFLINE HANDLING
@@ -2403,6 +2405,7 @@ function HomeScreen({ navigation }) {
   const [dailyExpanded, setDailyExpanded] = useState(false);
   const [showExPicker,  setShowExPicker]  = useState(false);
   const [pendingNav,    setPendingNav]    = useState(null);
+  const [avatarUri,     setAvatarUri]     = useState(null);
 
   const level = EXERCISE_LEVELS.find(l => l.id === Math.min(progress.currentLevel, EXERCISE_LEVELS.length)) || EXERCISE_LEVELS[0];
   const daily = getDailyChallenge(progress.currentLevel);
@@ -2419,6 +2422,8 @@ function HomeScreen({ navigation }) {
     if (now.getDay() === 0 && now.getHours() >= 18) {
       buildWeeklySummary(progress);
     }
+    // Load avatar
+    AsyncStorage.getItem(AVATAR_KEY).then(uri => { if (uri) setAvatarUri(uri); });
     return () => { fadeAnim.setValue(0); slideAnim.setValue(20); setShowExPicker(false); };
   }, []));
 
@@ -2483,7 +2488,10 @@ function HomeScreen({ navigation }) {
         {/* ── 1. HEADER ROW ── */}
         <Animated.View style={[hd.header, { paddingTop: insets.top + 16, opacity: fadeAnim }]}>
           <TouchableOpacity onPress={() => navigation.navigate('Profile')} style={hd.avatarWrap}>
-            <Text style={hd.avatarText}>{initials || '🤸'}</Text>
+            {avatarUri
+              ? <Image source={{ uri: avatarUri }} style={{ width: 40, height: 40, borderRadius: 20 }} resizeMode="cover" />
+              : <Text style={hd.avatarText}>{initials || '🤸'}</Text>
+            }
           </TouchableOpacity>
           <View style={{ flex: 1, marginLeft: 12 }}>
             <Text style={hd.welcomeLabel}>WELCOME BACK,</Text>
@@ -4206,7 +4214,8 @@ function ProfileScreen() {
   const [pwLoading,        setPwLoading]        = useState(false);
   const [pwError,          setPwError]          = useState('');
   const [pwSuccess,        setPwSuccess]        = useState(false);
-  const [avatarUploading] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarUri,       setAvatarUri]       = useState(null);
   const fadeAnim     = useRef(new Animated.Value(0)).current;
   const slideAnim    = useRef(new Animated.Value(20)).current;
   const toastOpacity = useRef(new Animated.Value(0)).current;
@@ -4220,8 +4229,46 @@ function ProfileScreen() {
       Animated.timing(fadeAnim,  { toValue: 1, duration: 420, useNativeDriver: true }),
       Animated.spring(slideAnim, { toValue: 0, tension: 60, friction: 10, useNativeDriver: true }),
     ]).start();
+    // Load saved avatar URI
+    AsyncStorage.getItem(AVATAR_KEY).then(uri => { if (uri) setAvatarUri(uri); });
     return () => { fadeAnim.setValue(0); slideAnim.setValue(20); };
   }, []));
+
+  const pickAvatar = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Permission needed to pick a photo');
+      return;
+    }
+    setAvatarUploading(true);
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+      });
+      if (!result.canceled && result.assets?.[0]?.uri) {
+        const uri = result.assets[0].uri;
+        await AsyncStorage.setItem(AVATAR_KEY, uri);
+        setAvatarUri(uri);
+      }
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
+  const handleAvatarLongPress = () => {
+    if (!avatarUri) return;
+    Alert.alert('Profile Photo', 'Remove your photo?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove Photo', style: 'destructive', onPress: async () => {
+          await AsyncStorage.removeItem(AVATAR_KEY);
+          setAvatarUri(null);
+        },
+      },
+    ]);
+  };
 
   const openEdit = () => { setNameInput(progress.userName || ''); setEditVisible(true); };
 
@@ -4427,17 +4474,19 @@ function ProfileScreen() {
 
         {/* Avatar hero */}
         <Animated.View style={[pf.avatarSection, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-          {/* Outer orange ring */}
           <View style={pf.avatarRing}>
-            <TouchableOpacity onPress={openEdit} activeOpacity={0.85} style={pf.avatarWrap}>
-              {authUser?.avatar_url && authUser.avatar_url.startsWith('https://') ? (
-                <View style={[pf.avatarCircle, { overflow: 'hidden' }]}>
-                  <WebView
-                    source={{ uri: authUser.avatar_url }}
-                    style={{ width: 108, height: 108 }}
-                    scrollEnabled={false}
-                  />
-                </View>
+            <TouchableOpacity
+              onPress={pickAvatar}
+              onLongPress={handleAvatarLongPress}
+              activeOpacity={0.85}
+              style={pf.avatarWrap}
+            >
+              {avatarUri ? (
+                <Image
+                  source={{ uri: avatarUri }}
+                  style={[pf.avatarCircle, { overflow: 'hidden' }]}
+                  resizeMode="cover"
+                />
               ) : (
                 <View style={[pf.avatarCircle, { backgroundColor: C.accentDim }]}>
                   {initials
