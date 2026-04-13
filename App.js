@@ -1192,6 +1192,34 @@ const AI_QUEUE_KEY       = '@handstandai_ai_queue';
 const PLAN_KEY           = '@handstandai_plan';
 const MIGRATION_KEY      = '@handstandai_migrated';
 const AVATAR_KEY         = 'user_avatar_uri';
+const QUIZ_ANSWERS_KEY   = 'onboarding_answers';
+const QUIZ_LEVEL_KEY     = 'user_level';
+const QUIZ_COMPLETE_KEY  = 'onboarding_complete';
+
+const QUIZ_QUESTIONS = [
+  { id: 0, question: 'Can you kick up to a wall handstand?',                 options: ['Yes', 'Sometimes', 'No'] },
+  { id: 1, question: 'How long can you hold against a wall?',                options: ['0 seconds', '5-15 seconds', '15-30 seconds', '30+ seconds'] },
+  { id: 2, question: 'Have you ever held a handstand away from the wall?',   options: ['Never', 'A second or two', '5+ seconds'] },
+  { id: 3, question: "What's your #1 problem right now?",                    options: ['I fall forward', 'I fall back', "I can't kick up", 'My wrists hurt', 'My shoulders are tight'] },
+  { id: 4, question: 'How many days per week can you train?',                options: ['2-3 days', '4-5 days', '6-7 days'] },
+  { id: 5, question: "What's your goal?",                                    options: ['10-second hold', '30-second hold', '1-minute hold', 'Press to handstand', 'Walking on hands'] },
+  { id: 6, question: 'Any injuries to watch out for?',                       options: ['Wrists', 'Shoulders', 'Back', 'None'] },
+];
+
+function assignLevel(answers) {
+  const q1 = answers[0]; // kick up?
+  const q2 = answers[1]; // wall hold duration
+  const q3 = answers[2]; // freestanding?
+  if (q1 === 'No' || q2 === '0 seconds') return 1;
+  if (q2 === '5-15 seconds' && q3 === 'Never') return 2;
+  if (q3 === 'A second or two') return 3;
+  if (q3 === '5+ seconds' && q2 === '15-30 seconds') return 4;
+  if (q3 === '5+ seconds' && q2 === '30+ seconds') return 5;
+  // Fallback by wall hold
+  if (q2 === '5-15 seconds') return 2;
+  if (q2 === '15-30 seconds') return 3;
+  return 2;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FEATURE 4 – OFFLINE HANDLING
@@ -5070,20 +5098,19 @@ const pf = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 // SCREEN – Onboarding (Movemate style)
 // ─────────────────────────────────────────────────────────────────────────────
-const OB_LEVELS = [
-  { level: 1, icon: '🌱', title: 'Complete Beginner',  desc: "I've never done a handstand" },
-  { level: 2, icon: '🔥', title: 'Some Experience',    desc: 'I can do wall handstands' },
-  { level: 3, icon: '⚡', title: 'Intermediate+',       desc: "I'm working on freestanding" },
-];
-
-function OnboardingScreen({ onComplete }) {
+// ONBOARDING QUIZ
+// Steps: 0=Welcome, 1-7=Quiz questions, 8=Name, 9=Notifications, 10=Celebration
+// ─────────────────────────────────────────────────────────────────────────────
+function OnboardingQuiz({ onComplete }) {
   const insets = useSafeAreaInsets();
   const { refreshProgress } = useContext(UserProgressContext);
   const [step,          setStep]          = useState(0);
-  const [selectedLevel, setSelectedLevel] = useState(null);
+  const [answers,       setAnswers]       = useState(Array(7).fill(null));
   const [nameInput,     setNameInput]     = useState('');
+  const [assignedLevel, setAssignedLevel] = useState(1);
   const fadeAnim  = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
+  const flameAnim = useRef(new Animated.Value(0)).current;
 
   const animateTo = (nextStep) => {
     Animated.parallel([
@@ -5099,41 +5126,88 @@ function OnboardingScreen({ onComplete }) {
     });
   };
 
-  const finish = async () => {
+  const selectAnswer = (qIndex, option) => {
+    const next = [...answers];
+    next[qIndex] = option;
+    setAnswers(next);
+  };
+
+  // Called after last quiz question (step 7)
+  const handleQuizFinish = async () => {
+    const level = assignLevel(answers);
+    setAssignedLevel(level);
+    try {
+      await AsyncStorage.setItem(QUIZ_ANSWERS_KEY, JSON.stringify(answers));
+      await AsyncStorage.setItem(QUIZ_LEVEL_KEY,   String(level));
+    } catch (_) {}
+    animateTo(8);
+  };
+
+  // Final save + show celebration
+  const finish = async (enableNotifs = false) => {
     const today = new Date().toDateString();
     const initial = {
       ...DEFAULT_PROGRESS,
-      currentLevel:   selectedLevel || 1,
+      currentLevel:   Math.min(assignedLevel, EXERCISE_LEVELS.length),
       streak:         1,
       lastActiveDate: today,
       userName:       nameInput.trim(),
     };
     try {
-      await AsyncStorage.setItem(STORAGE_KEY,    JSON.stringify(initial));
-      await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
+      await AsyncStorage.setItem(STORAGE_KEY,       JSON.stringify(initial));
+      await AsyncStorage.setItem(ONBOARDING_KEY,    'true');
+      await AsyncStorage.setItem(QUIZ_COMPLETE_KEY, 'true');
     } catch (_) {}
-    onComplete(refreshProgress);
+    // Celebration screen
+    animateTo(10);
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(flameAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+        Animated.timing(flameAnim, { toValue: 0, duration: 600, useNativeDriver: true }),
+      ])
+    ).start();
+    setTimeout(() => { onComplete(refreshProgress); }, 2000);
   };
+
+  // Derived values
+  const qIndex      = step >= 1 && step <= 7 ? step - 1 : null;
+  const currentQ    = qIndex !== null ? QUIZ_QUESTIONS[qIndex] : null;
+  const currentAns  = qIndex !== null ? answers[qIndex] : null;
+  const hasAnswer   = currentAns !== null;
+  const showBar     = step >= 1 && step <= 7;
+  const barProgress = showBar ? step / 7 : 0;
+  const celebLevel  = EXERCISE_LEVELS.find(l => l.id === Math.min(assignedLevel, EXERCISE_LEVELS.length));
 
   return (
     <KeyboardAvoidingView
       style={[ob.container, { paddingTop: insets.top, paddingBottom: insets.bottom + S.lg }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      {/* Dark background */}
       <LinearGradient colors={[C.bg, '#0D0D0F', C.bg]} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0.5, y: 1 }} />
-
-      {/* Decorative circles */}
       <View style={ob.deco1} />
       <View style={ob.deco2} />
       <View style={ob.deco3} />
 
-      {/* Progress dots */}
-      <View style={ob.dots}>
-        {[0, 1, 2, 3].map(i => (
-          <View key={i} style={[ob.dot, step === i && ob.dotActive, step > i && ob.dotDone]} />
-        ))}
-      </View>
+      {/* Back arrow — quiz steps 2-7 only */}
+      {step >= 2 && step <= 7 && (
+        <TouchableOpacity
+          onPress={() => animateTo(step - 1)}
+          style={ob.backBtn}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="arrow-back" size={22} color={C.textSub} />
+        </TouchableOpacity>
+      )}
+
+      {/* Progress bar — steps 1-7 */}
+      {showBar && (
+        <View style={ob.progressWrap}>
+          <View style={ob.progressTrack}>
+            <View style={[ob.progressFill, { width: `${barProgress * 100}%` }]} />
+          </View>
+          <Text style={[T.cap, { marginTop: 6, alignSelf: 'flex-end' }]}>{step} of 7</Text>
+        </View>
+      )}
 
       {/* Step content */}
       <Animated.View style={[ob.content, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
@@ -5150,46 +5224,43 @@ function OnboardingScreen({ onComplete }) {
               Train smarter.{'\n'}Balance longer.
             </Text>
             <Text style={[T.body, { textAlign: 'center', marginTop: S.lg, maxWidth: 300, lineHeight: 22 }]}>
-              Your AI-powered handstand coach. Track practice, get feedback, and unlock new levels.
+              Answer 7 quick questions and we'll build your perfect starting point.
             </Text>
           </View>
         )}
 
-        {/* STEP 1 – Level selection */}
-        {step === 1 && (
+        {/* STEPS 1-7 – Quiz questions */}
+        {step >= 1 && step <= 7 && currentQ && (
           <View style={ob.slide}>
-            <Text style={[T.label, { color: C.accent, marginBottom: S.sm }]}>STEP 1 OF 3</Text>
-            <Text style={[T.h2, { textAlign: 'center', marginBottom: S.xs }]}>Where are you now?</Text>
-            <Text style={[T.body, { textAlign: 'center', marginBottom: S.lg }]}>
-              We'll set your starting level based on your experience.
+            <Text style={[T.h2, { textAlign: 'center', marginBottom: S.lg, lineHeight: 36 }]}>
+              {currentQ.question}
             </Text>
-            {OB_LEVELS.map(opt => (
-              <TouchableOpacity
-                key={opt.level}
-                style={[ob.levelPill, selectedLevel === opt.level && ob.levelPillActive]}
-                onPress={() => setSelectedLevel(opt.level)}
-                activeOpacity={0.8}
-              >
-                <Text style={{ fontSize: 26 }}>{opt.icon}</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={[T.h4, { color: selectedLevel === opt.level ? C.white : C.text }]}>{opt.title}</Text>
-                  <Text style={T.cap}>{opt.desc}</Text>
-                </View>
-                <View style={[ob.radio, selectedLevel === opt.level && { backgroundColor: C.accent, borderColor: C.accent }]}>
-                  {selectedLevel === opt.level && <View style={ob.radioDot} />}
-                </View>
-              </TouchableOpacity>
-            ))}
+            <View style={{ width: '100%', gap: S.sm }}>
+              {currentQ.options.map(option => {
+                const selected = currentAns === option;
+                return (
+                  <TouchableOpacity
+                    key={option}
+                    style={[ob.optionCard, selected && ob.optionCardSelected]}
+                    onPress={() => selectAnswer(qIndex, option)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[ob.optionText, selected && { color: C.black }]}>{option}</Text>
+                    {selected && <Ionicons name="checkmark-circle" size={20} color={C.black} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </View>
         )}
 
-        {/* STEP 2 – Name */}
-        {step === 2 && (
+        {/* STEP 8 – Name */}
+        {step === 8 && (
           <View style={ob.slide}>
-            <Text style={[T.label, { color: C.accent, marginBottom: S.sm }]}>STEP 2 OF 3</Text>
+            <Text style={[T.label, { color: C.accent, marginBottom: S.sm }]}>ALMOST DONE</Text>
             <Text style={[T.h2, { textAlign: 'center', marginBottom: S.xs }]}>What's your name?</Text>
             <Text style={[T.body, { textAlign: 'center', marginBottom: S.lg }]}>
-              We'll use this to personalise your experience. You can skip this.
+              We'll use this to personalise your experience.
             </Text>
             <TextInput
               style={ob.nameInput}
@@ -5200,23 +5271,23 @@ function OnboardingScreen({ onComplete }) {
               maxLength={30}
               autoFocus
               returnKeyType="done"
-              onSubmitEditing={() => animateTo(3)}
+              onSubmitEditing={() => animateTo(9)}
             />
           </View>
         )}
 
-        {/* STEP 3 – Notifications */}
-        {step === 3 && (
+        {/* STEP 9 – Notifications */}
+        {step === 9 && (
           <View style={ob.slide}>
-            <Text style={[T.label, { color: C.accent, marginBottom: S.sm }]}>STEP 3 OF 3</Text>
+            <Text style={[T.label, { color: C.accent, marginBottom: S.sm }]}>STAY CONSISTENT</Text>
             <Text style={{ fontSize: 48, marginBottom: S.sm }}>🔔</Text>
-            <Text style={[T.h2, { textAlign: 'center', marginBottom: S.xs }]}>Stay Consistent</Text>
+            <Text style={[T.h2, { textAlign: 'center', marginBottom: S.xs }]}>Never Miss a Session</Text>
             <Text style={[T.body, { textAlign: 'center', marginBottom: S.lg, maxWidth: 300, lineHeight: 22 }]}>
-              Enable daily reminders and streak alerts so you never miss a session.
+              Enable daily reminders and streak alerts.
             </Text>
             {[
-              { icon: '⏰', title: 'Daily training reminder', desc: 'We\'ll nudge you at your chosen time' },
-              { icon: '🔥', title: 'Streak protection alerts', desc: 'Don\'t break your streak — trained yet?' },
+              { icon: '⏰', title: 'Daily training reminder', desc: "We'll nudge you each morning" },
+              { icon: '🔥', title: 'Streak protection alerts', desc: "Don't break your streak — trained yet?" },
               { icon: '📊', title: 'Weekly progress summary', desc: 'Sunday recap of your training week' },
             ].map(item => (
               <View key={item.title} style={[ob.levelPill, { marginBottom: S.xs }]}>
@@ -5229,6 +5300,30 @@ function OnboardingScreen({ onComplete }) {
             ))}
           </View>
         )}
+
+        {/* STEP 10 – Celebration */}
+        {step === 10 && (
+          <View style={[ob.slide, { justifyContent: 'center', paddingTop: S.xxl }]}>
+            <Animated.Text style={{
+              fontSize: 80,
+              opacity: flameAnim.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }),
+              transform: [{ scale: flameAnim.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1.08] }) }],
+            }}>
+              🔥
+            </Animated.Text>
+            <Text style={[T.label, { color: C.accent, marginTop: S.xl, marginBottom: S.xs }]}>YOUR STARTING POINT</Text>
+            <Text style={[T.h1, { textAlign: 'center', fontSize: 48, color: C.accent }]}>
+              Level {assignedLevel}
+            </Text>
+            <Text style={[T.h3, { textAlign: 'center', marginTop: S.xs, color: C.text }]}>
+              {celebLevel?.name || 'Beginner'}
+            </Text>
+            <Text style={[T.body, { textAlign: 'center', marginTop: S.md, maxWidth: 260, lineHeight: 22 }]}>
+              Let's build your handstand from here.
+            </Text>
+          </View>
+        )}
+
       </Animated.View>
 
       {/* CTA buttons */}
@@ -5241,32 +5336,44 @@ function OnboardingScreen({ onComplete }) {
             </LinearGradient>
           </TouchableOpacity>
         )}
-        {step === 1 && (
+        {step >= 1 && step <= 6 && (
           <TouchableOpacity
-            style={[ob.primaryBtn, !selectedLevel && { opacity: 0.45 }]}
-            onPress={() => selectedLevel && animateTo(2)}
+            style={[ob.primaryBtn, !hasAnswer && { opacity: 0.4 }]}
+            onPress={() => hasAnswer && animateTo(step + 1)}
             activeOpacity={0.85}
           >
             <LinearGradient colors={G.accent} style={ob.primaryGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-              <Text style={[T.h4, { color: C.black, fontSize: 16, fontWeight: '900' }]}>CONTINUE</Text>
+              <Text style={[T.h4, { color: C.black, fontSize: 16, fontWeight: '900' }]}>NEXT</Text>
               <Ionicons name="arrow-forward" size={18} color={C.black} />
             </LinearGradient>
           </TouchableOpacity>
         )}
-        {step === 2 && (
+        {step === 7 && (
+          <TouchableOpacity
+            style={[ob.primaryBtn, !hasAnswer && { opacity: 0.4 }]}
+            onPress={() => hasAnswer && handleQuizFinish()}
+            activeOpacity={0.85}
+          >
+            <LinearGradient colors={G.accent} style={ob.primaryGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+              <Text style={[T.h4, { color: C.black, fontSize: 16, fontWeight: '900' }]}>FINISH</Text>
+              <Ionicons name="checkmark" size={18} color={C.black} />
+            </LinearGradient>
+          </TouchableOpacity>
+        )}
+        {step === 8 && (
           <View style={{ width: '100%', gap: S.sm }}>
-            <TouchableOpacity style={ob.primaryBtn} onPress={() => animateTo(3)} activeOpacity={0.85}>
+            <TouchableOpacity style={ob.primaryBtn} onPress={() => animateTo(9)} activeOpacity={0.85}>
               <LinearGradient colors={G.accent} style={ob.primaryGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
                 <Text style={[T.h4, { color: C.black, fontSize: 16, fontWeight: '900' }]}>CONTINUE</Text>
                 <Ionicons name="arrow-forward" size={18} color={C.black} />
               </LinearGradient>
             </TouchableOpacity>
-            <TouchableOpacity style={ob.skipBtn} onPress={() => animateTo(3)} activeOpacity={0.7}>
-              <Text style={[T.small, { color: C.textMuted }]}>Skip – I'll add my name later</Text>
+            <TouchableOpacity style={ob.skipBtn} onPress={() => animateTo(9)} activeOpacity={0.7}>
+              <Text style={[T.small, { color: C.textMuted }]}>Skip — I'll add my name later</Text>
             </TouchableOpacity>
           </View>
         )}
-        {step === 3 && (
+        {step === 9 && (
           <View style={{ width: '100%', gap: S.sm }}>
             <TouchableOpacity
               style={ob.primaryBtn}
@@ -5277,7 +5384,7 @@ function OnboardingScreen({ onComplete }) {
                   await _saveNotifSettings(settings);
                   await scheduleAllNotifications(settings, 1);
                 }
-                await finish();
+                await finish(true);
               }}
               activeOpacity={0.85}
             >
@@ -5286,37 +5393,38 @@ function OnboardingScreen({ onComplete }) {
                 <Ionicons name="notifications-outline" size={18} color={C.black} />
               </LinearGradient>
             </TouchableOpacity>
-            <TouchableOpacity style={ob.skipBtn} onPress={finish} activeOpacity={0.7}>
-              <Text style={[T.small, { color: C.textMuted }]}>Skip – I'll set this up later</Text>
+            <TouchableOpacity style={ob.skipBtn} onPress={() => finish(false)} activeOpacity={0.7}>
+              <Text style={[T.small, { color: C.textMuted }]}>Skip — I'll set this up later</Text>
             </TouchableOpacity>
           </View>
         )}
+        {/* step 10: no button — auto-navigates */}
       </View>
     </KeyboardAvoidingView>
   );
 }
 
 const ob = StyleSheet.create({
-  container:      { flex: 1, backgroundColor: C.bg, alignItems: 'center' },
-  deco1:          { position: 'absolute', width: 260, height: 260, borderRadius: 130, backgroundColor: C.accent + '08', top: -80, right: -80 },
-  deco2:          { position: 'absolute', width: 180, height: 180, borderRadius: 90,  backgroundColor: C.accent + '05', bottom: 80, left: -60 },
-  deco3:          { position: 'absolute', width: 120, height: 120, borderRadius: 60,  backgroundColor: C.accent + '06', top: '40%', right: -30 },
-  dots:           { flexDirection: 'row', gap: S.sm, marginTop: S.lg, marginBottom: S.sm },
-  dot:            { width: 8, height: 8, borderRadius: 4, backgroundColor: C.border },
-  dotActive:      { width: 24, height: 8, borderRadius: 4, backgroundColor: C.accent },
-  dotDone:        { backgroundColor: C.accent + '55' },
-  content:        { flex: 1, alignItems: 'center', justifyContent: 'center', width: '100%', paddingHorizontal: S.lg },
-  slide:          { alignItems: 'center', width: '100%' },
-  logoBg:         { width: 100, height: 100, borderRadius: 30, backgroundColor: C.accentDim, borderWidth: 1, borderColor: C.accent + '44', alignItems: 'center', justifyContent: 'center', shadowColor: C.accent, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 20, elevation: 12 },
-  levelPill:      { flexDirection: 'row', alignItems: 'center', gap: S.md, backgroundColor: C.bgCard, borderRadius: R.xxl, padding: S.md, marginBottom: S.sm, borderWidth: 2, borderColor: C.border, width: '100%' },
-  levelPillActive:{ borderColor: C.accent, backgroundColor: C.accentDim },
-  radio:          { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: C.borderLight, alignItems: 'center', justifyContent: 'center' },
-  radioDot:       { width: 10, height: 10, borderRadius: 5, backgroundColor: C.white },
-  nameInput:      { width: '100%', backgroundColor: C.bgCard, borderRadius: R.xl, paddingHorizontal: S.md, paddingVertical: S.md, fontSize: 16, color: C.text, borderWidth: 1, borderColor: C.border, textAlign: 'center' },
-  btnRow:         { width: '100%', paddingHorizontal: S.lg, alignItems: 'center', gap: S.sm },
-  primaryBtn:     { width: '100%', borderRadius: R.xxl, overflow: 'hidden' },
-  primaryGrad:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: S.sm, paddingVertical: S.md + 2 },
-  skipBtn:        { paddingVertical: S.sm, alignItems: 'center' },
+  container:          { flex: 1, backgroundColor: C.bg, alignItems: 'center' },
+  deco1:              { position: 'absolute', width: 260, height: 260, borderRadius: 130, backgroundColor: C.accent + '08', top: -80, right: -80 },
+  deco2:              { position: 'absolute', width: 180, height: 180, borderRadius: 90,  backgroundColor: C.accent + '05', bottom: 80, left: -60 },
+  deco3:              { position: 'absolute', width: 120, height: 120, borderRadius: 60,  backgroundColor: C.accent + '06', top: '40%', right: -30 },
+  backBtn:            { position: 'absolute', top: 0, left: S.lg, zIndex: 10, width: 44, height: 44, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 4 },
+  progressWrap:       { width: '100%', paddingHorizontal: S.lg, paddingTop: S.sm },
+  progressTrack:      { width: '100%', height: 4, backgroundColor: C.border, borderRadius: 2, overflow: 'hidden' },
+  progressFill:       { height: 4, backgroundColor: C.accent, borderRadius: 2 },
+  content:            { flex: 1, alignItems: 'center', justifyContent: 'center', width: '100%', paddingHorizontal: S.lg },
+  slide:              { alignItems: 'center', width: '100%' },
+  logoBg:             { width: 100, height: 100, borderRadius: 30, backgroundColor: C.accentDim, borderWidth: 1, borderColor: C.accent + '44', alignItems: 'center', justifyContent: 'center', shadowColor: C.accent, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 20, elevation: 12 },
+  optionCard:         { width: '100%', padding: S.md + 2, borderRadius: R.xl, backgroundColor: C.bgCard, borderWidth: 2, borderColor: C.border, flexDirection: 'row', alignItems: 'center', gap: S.sm },
+  optionCardSelected: { backgroundColor: C.accent, borderColor: C.accent },
+  optionText:         { fontSize: 16, fontWeight: '700', color: C.text, flex: 1 },
+  levelPill:          { flexDirection: 'row', alignItems: 'center', gap: S.md, backgroundColor: C.bgCard, borderRadius: R.xxl, padding: S.md, marginBottom: S.sm, borderWidth: 2, borderColor: C.border, width: '100%' },
+  nameInput:          { width: '100%', backgroundColor: C.bgCard, borderRadius: R.xl, paddingHorizontal: S.md, paddingVertical: S.md, fontSize: 16, color: C.text, borderWidth: 1, borderColor: C.border, textAlign: 'center' },
+  btnRow:             { width: '100%', paddingHorizontal: S.lg, alignItems: 'center', gap: S.sm },
+  primaryBtn:         { width: '100%', borderRadius: R.xxl, overflow: 'hidden' },
+  primaryGrad:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: S.sm, paddingVertical: S.md + 2 },
+  skipBtn:            { paddingVertical: S.sm, alignItems: 'center' },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -6528,7 +6636,7 @@ function AuthApp({ onAuthSuccess, onSkip }) {
             <PurchaseProvider>
               <MilestoneProvider>
                 <UserProgressProvider>
-                  <OnboardingScreen onComplete={onSkip} />
+                  <OnboardingQuiz onComplete={onSkip} />
                 </UserProgressProvider>
               </MilestoneProvider>
             </PurchaseProvider>
@@ -6568,7 +6676,7 @@ function AuthStateGate({ onboardingDone, onboardingChecked, checkOnboarding, set
       <PurchaseProvider>
         <MilestoneProvider>
           <UserProgressProvider>
-            <OnboardingScreen onComplete={(refresh) => {
+            <OnboardingQuiz onComplete={(refresh) => {
               if (refresh) refresh();
               setOnboardingDone(true);
             }} />
