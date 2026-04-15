@@ -1195,6 +1195,11 @@ const AVATAR_KEY         = 'user_avatar_uri';
 const QUIZ_ANSWERS_KEY   = 'onboarding_answers';
 const QUIZ_LEVEL_KEY     = 'user_level';
 const QUIZ_COMPLETE_KEY  = 'onboarding_complete';
+const PREVIEW_MODE_KEY   = 'preview_mode';
+const SIGNUP_COMPLETE_KEY = 'signup_complete';
+const USER_NAME_KEY      = 'user_name';
+
+const PreviewContext = React.createContext({ isPreview: false, triggerGate: () => {} });
 
 const QUIZ_QUESTIONS = [
   { id: 0, question: 'Can you kick up to a wall handstand?',                 options: ['Yes', 'Sometimes', 'No'] },
@@ -2729,7 +2734,18 @@ function HomeScreen({ navigation }) {
                   <Text style={[T.h4, { fontSize: 13 }]}>{ex.name}</Text>
                   <Text style={T.cap}>{ex.sets}</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={15} color={C.textMuted} />
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  {ex.videoId ? (
+                    <TouchableOpacity
+                      onPress={() => Linking.openURL(`https://www.youtube.com/watch?v=${ex.videoId}`)}
+                      activeOpacity={0.7}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Ionicons name="logo-youtube" size={20} color="#FF0000" />
+                    </TouchableOpacity>
+                  ) : null}
+                  <Ionicons name="chevron-forward" size={15} color={C.textMuted} />
+                </View>
               </TouchableOpacity>
             ))}
           </ScrollView>
@@ -4364,9 +4380,8 @@ function ProfileScreen() {
         { text: 'Delete Forever', style: 'destructive', onPress: async () => {
             try {
               await deleteAccount();
-              await AsyncStorage.multiRemove([STORAGE_KEY, ONBOARDING_KEY, NOTIFICATIONS_KEY, PLAN_KEY, MIGRATION_KEY]);
             } catch (_) {}
-            if (onReset) onReset();
+            if (onReset) onReset(); // root handleReset clears all keys
           },
         },
       ],
@@ -4380,11 +4395,7 @@ function ProfileScreen() {
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Reset', style: 'destructive', onPress: async () => {
-            try {
-              await AsyncStorage.removeItem(STORAGE_KEY);
-              await AsyncStorage.removeItem(ONBOARDING_KEY);
-            } catch (_) {}
-            if (onReset) onReset();
+            if (onReset) onReset(); // root handleReset clears all keys and returns to quiz
           },
         },
       ],
@@ -5101,12 +5112,16 @@ const pf = StyleSheet.create({
 // ONBOARDING QUIZ
 // Steps: 0=Welcome, 1-7=Quiz questions, 8=Name, 9=Notifications, 10=Celebration
 // ─────────────────────────────────────────────────────────────────────────────
+// qIndex 3 = Q4 ("problems"), qIndex 6 = Q7 ("injuries") — both multi-select
+const MULTI_SELECT_Q = new Set([3, 6]);
+
 function OnboardingQuiz({ onComplete }) {
   const insets = useSafeAreaInsets();
-  const { refreshProgress } = useContext(UserProgressContext);
   const [step,          setStep]          = useState(0);
-  const [answers,       setAnswers]       = useState(Array(7).fill(null));
-  const [nameInput,     setNameInput]     = useState('');
+  // Multi-select questions start as [], single-select start as null
+  const [answers,       setAnswers]       = useState(
+    Array.from({ length: 7 }, (_, i) => MULTI_SELECT_Q.has(i) ? [] : null)
+  );
   const [assignedLevel, setAssignedLevel] = useState(1);
   const fadeAnim  = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
@@ -5128,11 +5143,32 @@ function OnboardingQuiz({ onComplete }) {
 
   const selectAnswer = (qIndex, option) => {
     const next = [...answers];
-    next[qIndex] = option;
+    if (MULTI_SELECT_Q.has(qIndex)) {
+      const current = Array.isArray(next[qIndex]) ? next[qIndex] : [];
+      // Q7 "None" is exclusive: tapping it clears others; tapping others clears "None"
+      if (option === 'None') {
+        next[qIndex] = current.includes('None') ? [] : ['None'];
+      } else {
+        const withoutNone = current.filter(o => o !== 'None');
+        next[qIndex] = withoutNone.includes(option)
+          ? withoutNone.filter(o => o !== option)   // deselect
+          : [...withoutNone, option];                // select
+      }
+    } else {
+      next[qIndex] = option;
+    }
     setAnswers(next);
   };
 
-  // Called after last quiz question (step 7)
+  // Returns true when the current quiz step has a valid answer
+  const stepHasAnswer = (s) => {
+    if (s < 1 || s > 7) return true;
+    const qi = s - 1;
+    const ans = answers[qi];
+    return MULTI_SELECT_Q.has(qi) ? (Array.isArray(ans) && ans.length > 0) : ans !== null;
+  };
+
+  // Called after last quiz question (step 7) — saves answers, goes to celebration
   const handleQuizFinish = async () => {
     const level = assignLevel(answers);
     setAssignedLevel(level);
@@ -5140,25 +5176,7 @@ function OnboardingQuiz({ onComplete }) {
       await AsyncStorage.setItem(QUIZ_ANSWERS_KEY, JSON.stringify(answers));
       await AsyncStorage.setItem(QUIZ_LEVEL_KEY,   String(level));
     } catch (_) {}
-    animateTo(8);
-  };
-
-  // Final save + show celebration
-  const finish = async (enableNotifs = false) => {
-    const today = new Date().toDateString();
-    const initial = {
-      ...DEFAULT_PROGRESS,
-      currentLevel:   Math.min(assignedLevel, EXERCISE_LEVELS.length),
-      streak:         1,
-      lastActiveDate: today,
-      userName:       nameInput.trim(),
-    };
-    try {
-      await AsyncStorage.setItem(STORAGE_KEY,       JSON.stringify(initial));
-      await AsyncStorage.setItem(ONBOARDING_KEY,    'true');
-      await AsyncStorage.setItem(QUIZ_COMPLETE_KEY, 'true');
-    } catch (_) {}
-    // Celebration screen
+    // Go directly to celebration (step 10); steps 8/9 moved to post-signup flow
     animateTo(10);
     Animated.loop(
       Animated.sequence([
@@ -5166,17 +5184,25 @@ function OnboardingQuiz({ onComplete }) {
         Animated.timing(flameAnim, { toValue: 0, duration: 600, useNativeDriver: true }),
       ])
     ).start();
-    setTimeout(() => { onComplete(refreshProgress); }, 2000);
+    setTimeout(() => { onComplete(level); }, 2000);
   };
 
   // Derived values
   const qIndex      = step >= 1 && step <= 7 ? step - 1 : null;
   const currentQ    = qIndex !== null ? QUIZ_QUESTIONS[qIndex] : null;
   const currentAns  = qIndex !== null ? answers[qIndex] : null;
-  const hasAnswer   = currentAns !== null;
+  const isMulti     = qIndex !== null && MULTI_SELECT_Q.has(qIndex);
+  const hasAnswer   = stepHasAnswer(step);
   const showBar     = step >= 1 && step <= 7;
   const barProgress = showBar ? step / 7 : 0;
   const celebLevel  = EXERCISE_LEVELS.find(l => l.id === Math.min(assignedLevel, EXERCISE_LEVELS.length));
+
+  // Back destinations — steps 8/9 removed (moved to post-signup)
+  const backDest = () => {
+    if (step >= 1 && step <= 7) return step - 1; // Q1 → welcome (0), Q2-Q7 → prev Q
+    return null;
+  };
+  const showBack = step >= 1 && step <= 7;
 
   return (
     <KeyboardAvoidingView
@@ -5188,10 +5214,10 @@ function OnboardingQuiz({ onComplete }) {
       <View style={ob.deco2} />
       <View style={ob.deco3} />
 
-      {/* Back arrow — quiz steps 2-7 only */}
-      {step >= 2 && step <= 7 && (
+      {/* Back arrow — steps 1-9 */}
+      {showBack && (
         <TouchableOpacity
-          onPress={() => animateTo(step - 1)}
+          onPress={() => animateTo(backDest())}
           style={ob.backBtn}
           activeOpacity={0.7}
         >
@@ -5232,12 +5258,17 @@ function OnboardingQuiz({ onComplete }) {
         {/* STEPS 1-7 – Quiz questions */}
         {step >= 1 && step <= 7 && currentQ && (
           <View style={ob.slide}>
-            <Text style={[T.h2, { textAlign: 'center', marginBottom: S.lg, lineHeight: 36 }]}>
+            <Text style={[T.h2, { textAlign: 'center', marginBottom: isMulti ? S.xs : S.lg, lineHeight: 36 }]}>
               {currentQ.question}
             </Text>
+            {isMulti && (
+              <Text style={[T.cap, { color: C.textMuted, marginBottom: S.md }]}>Select all that apply</Text>
+            )}
             <View style={{ width: '100%', gap: S.sm }}>
               {currentQ.options.map(option => {
-                const selected = currentAns === option;
+                const selected = isMulti
+                  ? (Array.isArray(currentAns) && currentAns.includes(option))
+                  : currentAns === option;
                 return (
                   <TouchableOpacity
                     key={option}
@@ -5251,53 +5282,6 @@ function OnboardingQuiz({ onComplete }) {
                 );
               })}
             </View>
-          </View>
-        )}
-
-        {/* STEP 8 – Name */}
-        {step === 8 && (
-          <View style={ob.slide}>
-            <Text style={[T.label, { color: C.accent, marginBottom: S.sm }]}>ALMOST DONE</Text>
-            <Text style={[T.h2, { textAlign: 'center', marginBottom: S.xs }]}>What's your name?</Text>
-            <Text style={[T.body, { textAlign: 'center', marginBottom: S.lg }]}>
-              We'll use this to personalise your experience.
-            </Text>
-            <TextInput
-              style={ob.nameInput}
-              value={nameInput}
-              onChangeText={setNameInput}
-              placeholder="Your name (optional)"
-              placeholderTextColor={C.textMuted}
-              maxLength={30}
-              autoFocus
-              returnKeyType="done"
-              onSubmitEditing={() => animateTo(9)}
-            />
-          </View>
-        )}
-
-        {/* STEP 9 – Notifications */}
-        {step === 9 && (
-          <View style={ob.slide}>
-            <Text style={[T.label, { color: C.accent, marginBottom: S.sm }]}>STAY CONSISTENT</Text>
-            <Text style={{ fontSize: 48, marginBottom: S.sm }}>🔔</Text>
-            <Text style={[T.h2, { textAlign: 'center', marginBottom: S.xs }]}>Never Miss a Session</Text>
-            <Text style={[T.body, { textAlign: 'center', marginBottom: S.lg, maxWidth: 300, lineHeight: 22 }]}>
-              Enable daily reminders and streak alerts.
-            </Text>
-            {[
-              { icon: '⏰', title: 'Daily training reminder', desc: "We'll nudge you each morning" },
-              { icon: '🔥', title: 'Streak protection alerts', desc: "Don't break your streak — trained yet?" },
-              { icon: '📊', title: 'Weekly progress summary', desc: 'Sunday recap of your training week' },
-            ].map(item => (
-              <View key={item.title} style={[ob.levelPill, { marginBottom: S.xs }]}>
-                <Text style={{ fontSize: 24 }}>{item.icon}</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={T.h4}>{item.title}</Text>
-                  <Text style={T.cap}>{item.desc}</Text>
-                </View>
-              </View>
-            ))}
           </View>
         )}
 
@@ -5359,44 +5343,6 @@ function OnboardingQuiz({ onComplete }) {
               <Ionicons name="checkmark" size={18} color={C.black} />
             </LinearGradient>
           </TouchableOpacity>
-        )}
-        {step === 8 && (
-          <View style={{ width: '100%', gap: S.sm }}>
-            <TouchableOpacity style={ob.primaryBtn} onPress={() => animateTo(9)} activeOpacity={0.85}>
-              <LinearGradient colors={G.accent} style={ob.primaryGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                <Text style={[T.h4, { color: C.black, fontSize: 16, fontWeight: '900' }]}>CONTINUE</Text>
-                <Ionicons name="arrow-forward" size={18} color={C.black} />
-              </LinearGradient>
-            </TouchableOpacity>
-            <TouchableOpacity style={ob.skipBtn} onPress={() => animateTo(9)} activeOpacity={0.7}>
-              <Text style={[T.small, { color: C.textMuted }]}>Skip — I'll add my name later</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-        {step === 9 && (
-          <View style={{ width: '100%', gap: S.sm }}>
-            <TouchableOpacity
-              style={ob.primaryBtn}
-              onPress={async () => {
-                const status = await requestNotifPermission();
-                if (status === 'granted') {
-                  const settings = { ...DEFAULT_NOTIF_SETTINGS, enabled: true };
-                  await _saveNotifSettings(settings);
-                  await scheduleAllNotifications(settings, 1);
-                }
-                await finish(true);
-              }}
-              activeOpacity={0.85}
-            >
-              <LinearGradient colors={G.accent} style={ob.primaryGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                <Text style={[T.h4, { color: C.black, fontSize: 16, fontWeight: '900' }]}>ENABLE REMINDERS</Text>
-                <Ionicons name="notifications-outline" size={18} color={C.black} />
-              </LinearGradient>
-            </TouchableOpacity>
-            <TouchableOpacity style={ob.skipBtn} onPress={() => finish(false)} activeOpacity={0.7}>
-              <Text style={[T.small, { color: C.textMuted }]}>Skip — I'll set this up later</Text>
-            </TouchableOpacity>
-          </View>
         )}
         {/* step 10: no button — auto-navigates */}
       </View>
@@ -5776,6 +5722,255 @@ const pg = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 const TRAINING_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+// ── Structured programs ──────────────────────────────────────────────────────
+const ACTIVE_PROGRAM_KEY  = 'active_program_id';
+const PROGRAM_PROGRESS_KEY = 'program_progress';
+const PROGRAM_START_KEY   = 'program_start_date';
+
+const PROGRAMS = [
+  {
+    id: 'prog_a',
+    title: '4 Weeks to First Hold',
+    subtitle: 'Build your first freestanding kick-up from scratch',
+    levelRange: [1, 2],
+    weeks: [
+      {
+        weekNumber: 1, theme: 'Wrist Prep Foundations',
+        days: [
+          { dayNumber: 1, rest: false, title: 'Hollow & Wall Plank', items: [{ name: 'Wrist warm-up', sets: 1, detail: '5 min' }, { name: 'Hollow body hold', sets: 3, detail: '30 sec' }, { name: 'Wall plank', sets: 3, detail: '30 sec' }] },
+          { dayNumber: 2, rest: true,  title: 'Rest', items: [] },
+          { dayNumber: 3, rest: false, title: 'Pike Push-ups & Wall Walks', items: [{ name: 'Wrist warm-up', sets: 1, detail: '5 min' }, { name: 'Pike push-ups', sets: 3, detail: '8 reps' }, { name: 'Wall walks', sets: 3, detail: '2 reps' }] },
+          { dayNumber: 4, rest: true,  title: 'Rest', items: [] },
+          { dayNumber: 5, rest: false, title: 'Hollow Rocks & Wall Practice', items: [{ name: 'Wrist warm-up', sets: 1, detail: '5 min' }, { name: 'Hollow body rocks', sets: 3, detail: '20 reps' }, { name: 'Wall hold practice', sets: 5, detail: '1 attempt' }] },
+          { dayNumber: 6, rest: true,  title: 'Rest', items: [] },
+          { dayNumber: 7, rest: true,  title: 'Rest', items: [] },
+        ],
+      },
+      {
+        weekNumber: 2, theme: 'Wall Holds',
+        days: [
+          { dayNumber: 1, rest: false, title: 'Wall Holds 15s', items: [{ name: 'Wrist prep', sets: 1, detail: '5 min' }, { name: 'Wall hold', sets: 5, detail: '15 sec' }, { name: 'Hollow body', sets: 3, detail: '30 sec' }] },
+          { dayNumber: 2, rest: true,  title: 'Rest', items: [] },
+          { dayNumber: 3, rest: false, title: 'Kick-up Practice', items: [{ name: 'Wrist prep', sets: 1, detail: '5 min' }, { name: 'Kick-up practice', sets: 2, detail: '10 reps each leg' }, { name: 'Wall hold', sets: 5, detail: '20 sec' }] },
+          { dayNumber: 4, rest: true,  title: 'Rest', items: [] },
+          { dayNumber: 5, rest: false, title: 'Wall Holds 30s', items: [{ name: 'Wall hold', sets: 5, detail: '30 sec' }, { name: 'Shoulder taps on wall', sets: 3, detail: '10 reps' }] },
+          { dayNumber: 6, rest: true,  title: 'Rest', items: [] },
+          { dayNumber: 7, rest: true,  title: 'Rest', items: [] },
+        ],
+      },
+      {
+        weekNumber: 3, theme: 'Shoulder Engagement',
+        days: [
+          { dayNumber: 1, rest: false, title: 'Wall Holds & Shoulder Taps', items: [{ name: 'Wrist prep', sets: 1, detail: '5 min' }, { name: 'Wall hold', sets: 5, detail: '30 sec' }, { name: 'Shoulder taps', sets: 3, detail: '10 reps' }] },
+          { dayNumber: 2, rest: true,  title: 'Rest', items: [] },
+          { dayNumber: 3, rest: false, title: 'Kick-ups & Long Holds', items: [{ name: 'Kick-up practice', sets: 2, detail: '10 reps each leg' }, { name: 'Wall hold', sets: 5, detail: '45 sec' }] },
+          { dayNumber: 4, rest: true,  title: 'Rest', items: [] },
+          { dayNumber: 5, rest: false, title: 'Wall Taps Hollow', items: [{ name: 'Wall taps', sets: 3, detail: '10 reps' }, { name: 'Wall hold — stay hollow', sets: 5, detail: '30 sec' }] },
+          { dayNumber: 6, rest: true,  title: 'Rest', items: [] },
+          { dayNumber: 7, rest: true,  title: 'Rest', items: [] },
+        ],
+      },
+      {
+        weekNumber: 4, theme: 'First Freestanding Attempts',
+        days: [
+          { dayNumber: 1, rest: false, title: 'Away From Wall', items: [{ name: 'Wrist prep', sets: 1, detail: '5 min' }, { name: 'Kick-up away from wall', sets: 2, detail: '10 attempts' }, { name: 'Wall hold', sets: 5, detail: '45 sec' }] },
+          { dayNumber: 2, rest: true,  title: 'Rest', items: [] },
+          { dayNumber: 3, rest: false, title: 'Freestanding Reps', items: [{ name: 'Freestanding kick-up attempts', sets: 3, detail: '15 reps' }, { name: 'Wall taps', sets: 3, detail: '10 reps' }] },
+          { dayNumber: 4, rest: true,  title: 'Rest', items: [] },
+          { dayNumber: 5, rest: false, title: 'Open Practice', items: [{ name: 'Freestanding open practice', sets: 1, detail: '15 min' }] },
+          { dayNumber: 6, rest: true,  title: 'Rest', items: [] },
+          { dayNumber: 7, rest: false, title: 'Test Day', items: [{ name: 'Longest wall handstand hold', sets: 1, detail: 'Record it!' }] },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'prog_b',
+    title: '8 Weeks to Freestanding',
+    subtitle: 'Go from consistent wall holds to a 5-second freestand',
+    levelRange: [3, 3],
+    weeks: [
+      { weekNumber: 1, theme: 'Kick-up Accuracy', days: [
+        { dayNumber: 1, rest: false, title: 'Kick-up Drill', items: [{ name: 'Wrist warm-up', sets: 1, detail: '5 min' }, { name: 'Kick-up to wall', sets: 4, detail: '8 reps each leg' }, { name: 'Wall hold', sets: 5, detail: '30 sec' }] },
+        { dayNumber: 2, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 3, rest: false, title: 'Shoulder Stack', items: [{ name: 'Shoulder shrugs in plank', sets: 3, detail: '10 reps' }, { name: 'Wall hold shoulder push', sets: 5, detail: '30 sec' }] },
+        { dayNumber: 4, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 5, rest: false, title: 'Kick-up + Tap', items: [{ name: 'Kick-up to wall + shoulder tap', sets: 3, detail: '10 reps' }, { name: 'Wall hold', sets: 5, detail: '30 sec' }] },
+        { dayNumber: 6, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 7, rest: true, title: 'Rest', items: [] },
+      ]},
+      { weekNumber: 2, theme: 'Balance Finding', days: [
+        { dayNumber: 1, rest: false, title: 'Chest-to-wall Holds', items: [{ name: 'Chest-to-wall handstand', sets: 5, detail: '20 sec' }, { name: 'Finger-tip pressure drill', sets: 3, detail: '20 sec' }] },
+        { dayNumber: 2, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 3, rest: false, title: 'Away From Wall', items: [{ name: 'Kick-up 1 step from wall', sets: 4, detail: '10 reps' }, { name: 'Balance freeze attempts', sets: 3, detail: '5 attempts' }] },
+        { dayNumber: 4, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 5, rest: false, title: 'Open Balance', items: [{ name: 'Open freestand attempts', sets: 1, detail: '10 min' }, { name: 'Wall hold', sets: 5, detail: '45 sec' }] },
+        { dayNumber: 6, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 7, rest: true, title: 'Rest', items: [] },
+      ]},
+      { weekNumber: 3, theme: 'Line & Alignment', days: [
+        { dayNumber: 1, rest: false, title: 'Body Line Work', items: [{ name: 'Hollow body hold', sets: 4, detail: '30 sec' }, { name: 'Wall handstand hold hollow', sets: 5, detail: '30 sec' }] },
+        { dayNumber: 2, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 3, rest: false, title: 'Hip Over Shoulders', items: [{ name: 'Hip placement drill', sets: 3, detail: '8 reps' }, { name: 'Freestand attempts', sets: 1, detail: '10 min' }] },
+        { dayNumber: 4, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 5, rest: false, title: 'Full Line Practice', items: [{ name: 'Straight line wall hold', sets: 5, detail: '45 sec' }, { name: 'Free attempts', sets: 1, detail: '10 min' }] },
+        { dayNumber: 6, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 7, rest: true, title: 'Rest', items: [] },
+      ]},
+      { weekNumber: 4, theme: 'Micro-corrections', days: [
+        { dayNumber: 1, rest: false, title: 'Finger Pressure', items: [{ name: 'Fingertip press drill', sets: 3, detail: '30 sec' }, { name: 'Freestand attempts', sets: 1, detail: '12 min' }] },
+        { dayNumber: 2, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 3, rest: false, title: 'Fall Practice', items: [{ name: 'Controlled cartwheel out', sets: 3, detail: '5 reps' }, { name: 'Pirouette out', sets: 3, detail: '5 reps' }] },
+        { dayNumber: 4, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 5, rest: false, title: 'Open Session', items: [{ name: 'Freestand open practice', sets: 1, detail: '15 min' }] },
+        { dayNumber: 6, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 7, rest: true, title: 'Rest', items: [] },
+      ]},
+      { weekNumber: 5, theme: 'Consistency Building', days: [
+        { dayNumber: 1, rest: false, title: 'Volume Day', items: [{ name: 'Kick-up sets', sets: 6, detail: '10 reps' }, { name: 'Freestand attempts', sets: 1, detail: '10 min' }] },
+        { dayNumber: 2, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 3, rest: false, title: 'Technical Day', items: [{ name: 'Video yourself', sets: 1, detail: '1 attempt' }, { name: 'Alignment corrections', sets: 3, detail: '45 sec wall hold' }] },
+        { dayNumber: 4, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 5, rest: false, title: 'Open Practice', items: [{ name: 'Freestand open', sets: 1, detail: '20 min' }] },
+        { dayNumber: 6, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 7, rest: true, title: 'Rest', items: [] },
+      ]},
+      { weekNumber: 6, theme: 'Endurance Base', days: [
+        { dayNumber: 1, rest: false, title: 'Long Holds', items: [{ name: 'Wall hold max effort', sets: 3, detail: 'Max time' }, { name: 'Freestand attempts', sets: 1, detail: '10 min' }] },
+        { dayNumber: 2, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 3, rest: false, title: 'Density Sets', items: [{ name: 'Freestand in 5 min AMRAP', sets: 1, detail: '5 min' }, { name: 'Wall hold', sets: 3, detail: '60 sec' }] },
+        { dayNumber: 4, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 5, rest: false, title: 'Open Session', items: [{ name: 'Open freestand practice', sets: 1, detail: '20 min' }] },
+        { dayNumber: 6, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 7, rest: true, title: 'Rest', items: [] },
+      ]},
+      { weekNumber: 7, theme: 'Peak Training', days: [
+        { dayNumber: 1, rest: false, title: 'Max Attempts', items: [{ name: 'Freestand max attempts', sets: 1, detail: '15 min' }, { name: 'Hollow body', sets: 4, detail: '30 sec' }] },
+        { dayNumber: 2, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 3, rest: false, title: 'Quality Reps', items: [{ name: 'Slow kick-up drill', sets: 4, detail: '8 reps' }, { name: 'Hold to 3 sec', sets: 5, detail: '3 sec free' }] },
+        { dayNumber: 4, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 5, rest: false, title: 'Dress Rehearsal', items: [{ name: 'Full session open practice', sets: 1, detail: '20 min' }] },
+        { dayNumber: 6, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 7, rest: true, title: 'Rest', items: [] },
+      ]},
+      { weekNumber: 8, theme: 'Freestanding Test', days: [
+        { dayNumber: 1, rest: false, title: 'Light Warm-up', items: [{ name: 'Easy kick-up drill', sets: 3, detail: '8 reps' }, { name: 'Wall hold', sets: 3, detail: '30 sec' }] },
+        { dayNumber: 2, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 3, rest: false, title: 'Open Practice', items: [{ name: 'Freestand open', sets: 1, detail: '20 min' }] },
+        { dayNumber: 4, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 5, rest: false, title: 'Test Day', items: [{ name: 'Best freestanding hold — record it', sets: 1, detail: 'Max time' }] },
+        { dayNumber: 6, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 7, rest: true, title: 'Rest', items: [] },
+      ]},
+    ],
+  },
+  {
+    id: 'prog_c',
+    title: '1-Minute Hold Pursuit',
+    subtitle: 'Push past 15 seconds to a full 60-second freestand',
+    levelRange: [4, 5],
+    weeks: [
+      { weekNumber: 1, theme: 'Baseline Assessment', days: [
+        { dayNumber: 1, rest: false, title: 'Max Hold Test', items: [{ name: 'Warm-up', sets: 1, detail: '5 min' }, { name: 'Freestand max hold — record it', sets: 3, detail: 'Max time' }] },
+        { dayNumber: 2, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 3, rest: false, title: 'Body Line Audit', items: [{ name: 'Video your handstand', sets: 1, detail: '1 rep' }, { name: 'Straight body wall hold', sets: 5, detail: '60 sec' }] },
+        { dayNumber: 4, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 5, rest: false, title: 'Endurance Base', items: [{ name: 'Freestand attempts', sets: 1, detail: '15 min total' }, { name: 'Rest 30s between holds', sets: 1, detail: 'Note your times' }] },
+        { dayNumber: 6, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 7, rest: true, title: 'Rest', items: [] },
+      ]},
+      { weekNumber: 2, theme: 'Compression & Control', days: [
+        { dayNumber: 1, rest: false, title: 'Compression Drills', items: [{ name: 'Straddle compression holds', sets: 4, detail: '20 sec' }, { name: 'Freestand practice', sets: 1, detail: '10 min' }] },
+        { dayNumber: 2, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 3, rest: false, title: 'Shoulder Endurance', items: [{ name: 'Wall hold — eyes closed', sets: 3, detail: '30 sec' }, { name: 'Freestand holds', sets: 5, detail: 'Max each' }] },
+        { dayNumber: 4, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 5, rest: false, title: 'Full Session', items: [{ name: 'Freestand density: hold as many sec as possible in 10 min', sets: 1, detail: '10 min' }] },
+        { dayNumber: 6, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 7, rest: true, title: 'Rest', items: [] },
+      ]},
+      { weekNumber: 3, theme: 'Micro-corrections at Depth', days: [
+        { dayNumber: 1, rest: false, title: 'Pressure Awareness', items: [{ name: 'Fingertip balance drill', sets: 4, detail: '20 sec' }, { name: 'Freestand holds', sets: 1, detail: '15 min' }] },
+        { dayNumber: 2, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 3, rest: false, title: 'Slow Entry', items: [{ name: 'Slow controlled kick-up', sets: 5, detail: '5 reps' }, { name: 'Hold to 20 sec', sets: 5, detail: '20 sec free' }] },
+        { dayNumber: 4, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 5, rest: false, title: 'Open Session', items: [{ name: 'Freestand open practice', sets: 1, detail: '20 min' }] },
+        { dayNumber: 6, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 7, rest: true, title: 'Rest', items: [] },
+      ]},
+      { weekNumber: 4, theme: 'Volume Push', days: [
+        { dayNumber: 1, rest: false, title: 'High Volume', items: [{ name: 'Freestand attempts', sets: 1, detail: '20 min' }, { name: 'Wall hold endurance', sets: 3, detail: '90 sec' }] },
+        { dayNumber: 2, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 3, rest: false, title: 'Hold 30s', items: [{ name: 'Target: hold 30 sec free', sets: 5, detail: '30 sec' }, { name: 'Log times', sets: 1, detail: 'Note best' }] },
+        { dayNumber: 4, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 5, rest: false, title: 'Open Session', items: [{ name: 'Open freestand', sets: 1, detail: '25 min' }] },
+        { dayNumber: 6, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 7, rest: true, title: 'Rest', items: [] },
+      ]},
+      { weekNumber: 5, theme: 'Deload & Sharpen', days: [
+        { dayNumber: 1, rest: false, title: 'Easy Day', items: [{ name: 'Light kick-ups', sets: 3, detail: '5 reps' }, { name: 'Wall hold easy', sets: 3, detail: '30 sec' }] },
+        { dayNumber: 2, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 3, rest: false, title: 'Technique Only', items: [{ name: 'Slow entry drill', sets: 5, detail: '5 reps' }, { name: 'Video review hold', sets: 1, detail: '1 rep' }] },
+        { dayNumber: 4, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 5, rest: false, title: 'Easy Practice', items: [{ name: 'Open freestand light', sets: 1, detail: '15 min' }] },
+        { dayNumber: 6, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 7, rest: true, title: 'Rest', items: [] },
+      ]},
+      { weekNumber: 6, theme: '60-Second Test Week', days: [
+        { dayNumber: 1, rest: false, title: 'Prime', items: [{ name: 'Warm-up full', sets: 1, detail: '10 min' }, { name: 'Freestand holds', sets: 3, detail: '20 sec each' }] },
+        { dayNumber: 2, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 3, rest: false, title: 'Final Practice', items: [{ name: 'Open freestand — go for 45 sec', sets: 1, detail: '20 min' }] },
+        { dayNumber: 4, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 5, rest: false, title: 'Test Day', items: [{ name: '60-second hold attempt — record it', sets: 1, detail: 'Max time' }] },
+        { dayNumber: 6, rest: true, title: 'Rest', items: [] },
+        { dayNumber: 7, rest: true, title: 'Rest', items: [] },
+      ]},
+    ],
+  },
+];
+
+function levelToProgram(level) {
+  if (level <= 2) return 'prog_a';
+  if (level === 3) return 'prog_b';
+  return 'prog_c';
+}
+
+async function loadProgramState() {
+  try {
+    const [pid, raw_prog, raw_start] = await AsyncStorage.multiGet(
+      [ACTIVE_PROGRAM_KEY, PROGRAM_PROGRESS_KEY, PROGRAM_START_KEY]
+    ).then(pairs => pairs.map(([, v]) => v));
+    return {
+      activeProgramId: pid || null,
+      progress: raw_prog ? JSON.parse(raw_prog) : {},
+      startDate: raw_start || null,
+    };
+  } catch (_) { return { activeProgramId: null, progress: {}, startDate: null }; }
+}
+
+async function saveProgramState({ activeProgramId, progress, startDate }) {
+  try {
+    await AsyncStorage.multiSet([
+      [ACTIVE_PROGRAM_KEY,   activeProgramId || ''],
+      [PROGRAM_PROGRESS_KEY, JSON.stringify(progress)],
+      [PROGRAM_START_KEY,    startDate || ''],
+    ]);
+  } catch (_) {}
+}
+
+// Returns 0-based week index based on start date (date-driven, not completion-driven)
+function currentWeekIndex(startDate) {
+  if (!startDate) return 0;
+  const diff = Math.floor((Date.now() - new Date(startDate).getTime()) / 86400000);
+  return Math.max(0, Math.floor(diff / 7));
+}
+
+// Day key used in completedDays set: "w1d3"
+function dayKey(weekNum, dayNum) { return `w${weekNum}d${dayNum}`; }
+
+// Get today's 0-based day-of-week index Mon=0..Sun=6
+function todayDayIndex() { return (new Date().getDay() + 6) % 7; }
+
+
 const DEFAULT_PLAN = {
   trainingDays: [1, 3, 5],  // Mon=0 … Sun=6 indices
   startDate:    null,       // ISO date of the Monday plan was created
@@ -5927,45 +6122,77 @@ function WeeklyPlanScreen({ navigation }) {
   const insets  = useSafeAreaInsets();
   const { progress } = useContext(UserProgressContext);
   const { isPro } = useContext(PurchaseContext);
-  const [plan,        setPlanState]  = useState(null);
-  const [loading,     setLoading]    = useState(true);
-  const [activePhase, setActivePhase] = useState(null); // index into sessions
+
+  // ── Program state ──────────────────────────────────────────────────────────
+  const [loading,          setLoading]          = useState(true);
+  const [activeProgramId,  setActiveProgramId]  = useState(null);
+  const [progProgress,     setProgProgress]     = useState({});  // { programId: Set<dayKey> }
+  const [startDate,        setStartDate]        = useState(null);
+  const [selectedDay,      setSelectedDay]      = useState(null); // { week, day } for modal
+  const [switchModal,      setSwitchModal]      = useState(false);
+  const [switchTarget,     setSwitchTarget]     = useState(null);
+
+  // ── Fallback plan state (kept for backwards-compat) ────────────────────────
+  const [plan, setPlanState] = useState(null);
 
   useFocusEffect(useCallback(() => {
-    loadPlan().then(loaded => {
-      if (loaded) {
-        setPlanState(loaded);
-      } else {
-        const monday = getThisMonday();
-        const fresh = { ...DEFAULT_PLAN, startDate: monday };
-        savePlan(fresh);
-        setPlanState(fresh);
+    (async () => {
+      // Load legacy plan
+      const loaded = await loadPlan();
+      if (loaded) { setPlanState(loaded); }
+      else { const m = getThisMonday(); const f = { ...DEFAULT_PLAN, startDate: m }; savePlan(f); setPlanState(f); }
+
+      // Load program state
+      const ps = await loadProgramState();
+      let pid = ps.activeProgramId;
+      let sd  = ps.startDate;
+
+      // Auto-assign on first visit
+      if (!pid) {
+        const level = parseInt(await AsyncStorage.getItem(QUIZ_LEVEL_KEY) || '1', 10) || progress.currentLevel || 1;
+        pid = levelToProgram(level);
+        sd  = new Date().toISOString().slice(0, 10);
+        await saveProgramState({ activeProgramId: pid, progress: ps.progress, startDate: sd });
       }
+
+      setActiveProgramId(pid);
+      setProgProgress(ps.progress);
+      setStartDate(sd);
       setLoading(false);
-    });
+    })();
   }, []));
 
-  const today = new Date().toISOString().slice(0, 10);
-  const isTrainingDay = plan ? isTodayTrainingDay(plan.trainingDays) : false;
-  const weekOffset    = plan ? getPlanWeekOffset(plan.startDate) : 0;
-  const programWeek   = PROGRAM_WEEKS[weekOffset % PROGRAM_WEEKS.length];
-  const sessionDone   = plan?.completedSessions?.[today] === true;
+  // ── Derived values ─────────────────────────────────────────────────────────
+  const program     = PROGRAMS.find(p => p.id === activeProgramId) || PROGRAMS[0];
+  const weekIdx     = Math.min(currentWeekIndex(startDate), program.weeks.length - 1);
+  const currentWeek = program.weeks[weekIdx];
+  const todayDIdx   = todayDayIndex(); // 0=Mon…6=Sun
+  const todayDayObj = currentWeek?.days[todayDIdx] || null;
+  const completedSet= new Set(progProgress[activeProgramId] || []);
+  const todayKey    = todayDayObj ? dayKey(currentWeek.weekNumber, todayDayObj.dayNumber) : null;
+  const todayDone   = todayKey ? completedSet.has(todayKey) : false;
 
-  const toggleDay = async (dayIdx) => {
-    if (!plan) return;
-    const days = plan.trainingDays.includes(dayIdx)
-      ? plan.trainingDays.filter(d => d !== dayIdx)
-      : [...plan.trainingDays, dayIdx].sort((a, b) => a - b);
-    const next = { ...plan, trainingDays: days };
-    setPlanState(next);
-    await savePlan(next);
+  // ── Actions ────────────────────────────────────────────────────────────────
+  const markDayComplete = async (week, day) => {
+    const k = dayKey(week.weekNumber, day.dayNumber);
+    const next = new Set(completedSet);
+    next.add(k);
+    const nextProgress = { ...progProgress, [activeProgramId]: [...next] };
+    setProgProgress(nextProgress);
+    await saveProgramState({ activeProgramId, progress: nextProgress, startDate });
+    setSelectedDay(null);
+    Vibration.vibrate(30);
   };
 
-  const markTodayDone = async () => {
-    if (!plan) return;
-    const next = { ...plan, completedSessions: { ...plan.completedSessions, [today]: true } };
-    setPlanState(next);
-    await savePlan(next);
+  const confirmSwitchProgram = async (targetId) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const nextProgress = { ...progProgress, [targetId]: [] };
+    setActiveProgramId(targetId);
+    setProgProgress(nextProgress);
+    setStartDate(today);
+    setSwitchModal(false);
+    setSwitchTarget(null);
+    await saveProgramState({ activeProgramId: targetId, progress: nextProgress, startDate: today });
   };
 
   if (loading) {
@@ -5976,201 +6203,549 @@ function WeeklyPlanScreen({ navigation }) {
     );
   }
 
+  const totalWeeks    = program.weeks.length;
+  const barValue      = totalWeeks > 1 ? (weekIdx) / (totalWeeks - 1) : 1;
+  const completedDays = (progProgress[activeProgramId] || []).length;
+  const totalDays     = program.weeks.reduce((sum, w) => sum + w.days.filter(d => !d.rest).length, 0);
+
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <ScrollView
         style={{ flex: 1, paddingTop: insets.top }}
-        contentContainerStyle={{ paddingBottom: 40 }}
+        contentContainerStyle={{ paddingBottom: 120 }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
+        {/* ── Header ── */}
         <View style={wp.header}>
           <View>
-            <Text style={[T.label, { color: C.accent }]}>YOUR TRAINING PLAN</Text>
-            <Text style={[T.h2, { fontSize: 32, fontWeight: '900', textTransform: 'uppercase' }]}>THIS WEEK</Text>
+            <Text style={[T.label, { color: C.accent }]}>YOUR PROGRAM</Text>
+            <Text style={[T.h2, { fontSize: 26, fontWeight: '900' }]}>{program.title}</Text>
           </View>
           <View style={[wp.weekBadge, { backgroundColor: C.accentDim, borderColor: C.accent + '44' }]}>
-            <Text style={[T.small, { color: C.accent, fontWeight: '700' }]}>Week {weekOffset + 1}</Text>
+            <Text style={[T.small, { color: C.accent, fontWeight: '700' }]}>Wk {weekIdx + 1}/{totalWeeks}</Text>
           </View>
         </View>
 
-        {/* Week label card */}
-        <View style={wp.focusCard}>
-          <LinearGradient colors={['#1C1D21', '#16171A']} style={wp.focusGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-            <Text style={[T.label, { color: C.accent, marginBottom: 4 }]}>CURRENT PROGRAM</Text>
-            <Text style={[T.h3, { color: C.text, marginBottom: 4 }]}>{programWeek.label}</Text>
-            <Text style={[T.small, { color: C.textSub, lineHeight: 18 }]}>{programWeek.focus}</Text>
+        {/* ── Active Program Card ── */}
+        <View style={wp.programCard}>
+          <LinearGradient colors={['#1C1D21', '#16171A']} style={wp.programGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+            <Text style={[T.label, { color: C.accent, marginBottom: S.xs }]}>WEEK {weekIdx + 1} — {currentWeek?.theme?.toUpperCase()}</Text>
+            <ProgressBar value={barValue} color={C.accent} height={4} style={{ marginBottom: S.sm }} />
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+              <Text style={[T.cap, { color: C.textSub }]}>{completedDays} of {totalDays} sessions done</Text>
+              <Text style={[T.cap, { color: C.textMuted }]}>{program.subtitle}</Text>
+            </View>
           </LinearGradient>
         </View>
 
-        {/* Week calendar strip */}
-        <View style={wp.calSection}>
-          <Text style={[T.h4, { marginBottom: S.sm }]}>Training Days</Text>
-          <View style={wp.dayRow}>
-            {TRAINING_DAYS.map((label, idx) => {
-              const isTrain = plan?.trainingDays.includes(idx);
-              const thisDate = (() => {
-                const monday = new Date(plan?.startDate || getThisMonday());
-                monday.setDate(monday.getDate() + idx);
-                return monday.toISOString().slice(0, 10);
-              })();
-              const done = plan?.completedSessions?.[thisDate] === true;
-              const isToday = thisDate === today;
-              return (
-                <TouchableOpacity
-                  key={label}
-                  style={[wp.dayCell, isToday && wp.dayCellToday, isTrain && !isToday && wp.dayCellActive]}
-                  onPress={() => toggleDay(idx)}
-                  activeOpacity={0.75}
-                >
-                  <Text style={[T.cap, { color: isToday ? C.black : isTrain ? C.accent : C.textMuted, fontWeight: isToday || isTrain ? '700' : '400', fontSize: 10 }]}>{label}</Text>
-                  {done
-                    ? <Ionicons name="checkmark-circle" size={14} color={isToday ? C.black : C.accent} style={{ marginTop: 2 }} />
-                    : isTrain || isToday
-                      ? <View style={[wp.dayDot, { backgroundColor: isToday ? C.black : C.accent }]} />
-                      : <View style={[wp.dayDot, { backgroundColor: C.border }]} />
-                  }
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-          <Text style={[T.cap, { marginTop: S.xs, color: C.textMuted }]}>Tap a day to toggle training/rest</Text>
-        </View>
-
-        {/* Today's status */}
-        <View style={[wp.todayCard, { borderColor: isTrainingDay ? C.accent + '44' : C.border }]}>
-          <View style={[wp.todayIcon, { backgroundColor: isTrainingDay ? C.accentDim : C.bgCardAlt }]}>
-            <Text style={{ fontSize: 22 }}>{isTrainingDay ? (sessionDone ? '✅' : '🤸') : '😴'}</Text>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={T.h4}>
-              {isTrainingDay ? (sessionDone ? 'Session complete!' : 'Training day') : 'Rest day'}
+        {/* ── Today's Session Hero ── */}
+        {todayDayObj && !todayDayObj.rest && !todayDone && (
+          <View style={wp.todayHero}>
+            <LinearGradient colors={[C.accentDim, 'transparent']} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} />
+            <Text style={[T.label, { color: C.accent, marginBottom: S.xs }]}>TODAY'S SESSION</Text>
+            <Text style={[T.h3, { marginBottom: S.xs }]}>{todayDayObj.title}</Text>
+            <Text style={[T.small, { color: C.textSub, marginBottom: S.md }]}>
+              {todayDayObj.items.length} exercise{todayDayObj.items.length !== 1 ? 's' : ''}
             </Text>
-            <Text style={[T.small, { lineHeight: 18 }]}>
-              {isTrainingDay
-                ? sessionDone
-                  ? 'Great work! Come back tomorrow.'
-                  : 'Your session is ready below. Tap phases to expand.'
-                : 'Focus on recovery — see active rest suggestions below.'}
-            </Text>
-          </View>
-          {isTrainingDay && !sessionDone && (
-            <TouchableOpacity style={wp.startBtn} onPress={markTodayDone} activeOpacity={0.85}>
+            <TouchableOpacity
+              style={wp.startBtn}
+              onPress={() => setSelectedDay({ week: currentWeek, day: todayDayObj })}
+              activeOpacity={0.85}
+            >
               <LinearGradient colors={G.accent} style={wp.startGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                <Text style={[T.cap, { color: C.black, fontWeight: '800' }]}>Done</Text>
+                <Ionicons name="play" size={16} color={C.black} />
+                <Text style={[T.h4, { color: C.black, fontWeight: '900' }]}>START TODAY'S SESSION</Text>
               </LinearGradient>
             </TouchableOpacity>
-          )}
-        </View>
-
-        {isTrainingDay ? (
-          <>
-            <Text style={[T.h4, { marginHorizontal: S.md, marginTop: S.lg, marginBottom: S.sm }]}>Today's Session</Text>
-            {programWeek.sessions.map((session, i) => (
-              <TouchableOpacity
-                key={session.phase}
-                style={[wp.phaseCard, activePhase === i && wp.phaseCardActive]}
-                onPress={() => setActivePhase(activePhase === i ? null : i)}
-                activeOpacity={0.8}
-              >
-                <View style={wp.phaseHeader}>
-                  <Text style={[T.h4, { flex: 1 }]}>{session.phase}</Text>
-                  <Ionicons name={activePhase === i ? 'chevron-up' : 'chevron-down'} size={16} color={C.textMuted} />
-                </View>
-                {activePhase === i && (
-                  <View style={wp.phaseBody}>
-                    <View style={wp.phaseDivider} />
-                    {session.exercises.map((ex, j) => (
-                      <View key={j} style={wp.exRow}>
-                        <View style={wp.exBullet} />
-                        <Text style={[T.small, { flex: 1, lineHeight: 20 }]}>{ex}</Text>
-                      </View>
-                    ))}
-                    {i === 1 && (
-                      <TouchableOpacity
-                        style={wp.recordCta}
-                        onPress={() => navigation.navigate('WristWarmup', { levelId: progress.currentLevel })}
-                        activeOpacity={0.85}
-                      >
-                        <LinearGradient colors={G.accent} style={wp.recordGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                          <Ionicons name="videocam" size={14} color={C.black} />
-                          <Text style={[T.cap, { color: C.black, fontWeight: '800' }]}>Record This Skill</Text>
-                        </LinearGradient>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                )}
-              </TouchableOpacity>
-            ))}
-          </>
-        ) : (
-          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60 }}>
-            <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: C.accentDim, alignItems: 'center', justifyContent: 'center', shadowColor: '#D7FF3D', shadowOpacity: 0.3, shadowRadius: 20, shadowOffset: { width: 0, height: 0 }, elevation: 0, marginBottom: 20 }}>
-              <Ionicons name="moon" size={40} color={C.accent} />
-            </View>
-            <Text style={{ fontSize: 24, fontWeight: '900', color: C.white, letterSpacing: -0.5, textTransform: 'uppercase', marginBottom: 8 }}>REST DAY</Text>
-            <Text style={{ fontSize: 14, fontWeight: '500', color: C.textMuted, textAlign: 'center' }}>Recovery is part of training</Text>
           </View>
         )}
 
-        {/* Program progress */}
-        <View style={[wp.progressSection, { marginTop: S.lg }]}>
-          <View style={wp.progressHeader}>
-            <Text style={T.h4}>Program Progress</Text>
-            <Text style={[T.cap, { color: C.accent }]}>Week {weekOffset + 1} of {PROGRAM_WEEKS.length}</Text>
+        {todayDayObj?.rest && (
+          <View style={[wp.restHero, { borderColor: C.border }]}>
+            <Ionicons name="moon" size={32} color={C.accent} />
+            <View style={{ flex: 1, marginLeft: S.md }}>
+              <Text style={T.h4}>Rest Day</Text>
+              <Text style={[T.small, { color: C.textSub }]}>Recovery is part of training. See you tomorrow.</Text>
+            </View>
           </View>
-          <ProgressBar value={(weekOffset + 1) / PROGRAM_WEEKS.length} color={C.accent} height={6} />
-          <View style={wp.weeksList}>
-            {PROGRAM_WEEKS.map((w, i) => (
-              <View key={i} style={[wp.weekPill, i < weekOffset && { backgroundColor: C.successDim, borderColor: C.success + '44' }, i === weekOffset && { backgroundColor: C.accentDim, borderColor: C.accent + '44' }]}>
+        )}
+
+        {todayDone && (
+          <View style={[wp.restHero, { borderColor: C.accent + '44', backgroundColor: C.accentDim }]}>
+            <Ionicons name="checkmark-circle" size={32} color={C.accent} />
+            <View style={{ flex: 1, marginLeft: S.md }}>
+              <Text style={T.h4}>Session Complete!</Text>
+              <Text style={[T.small, { color: C.textSub }]}>Great work. Come back tomorrow.</Text>
+            </View>
+          </View>
+        )}
+
+        {/* ── Week Day Strip ── */}
+        <View style={{ paddingHorizontal: S.md, marginTop: S.lg }}>
+          <Text style={[T.h4, { marginBottom: S.sm }]}>This Week</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: S.sm }}>
+            {currentWeek?.days.map((day, idx) => {
+              const dk = dayKey(currentWeek.weekNumber, day.dayNumber);
+              const done = completedSet.has(dk);
+              const isToday = idx === todayDIdx;
+              const isPast  = idx < todayDIdx;
+              return (
+                <TouchableOpacity
+                  key={idx}
+                  style={[
+                    wp.dayCard,
+                    isToday && !day.rest && wp.dayCardToday,
+                    done && wp.dayCardDone,
+                    day.rest && wp.dayCardRest,
+                  ]}
+                  onPress={() => !day.rest && setSelectedDay({ week: currentWeek, day })}
+                  activeOpacity={day.rest ? 1 : 0.8}
+                >
+                  <Text style={[T.cap, { fontSize: 9, color: isToday ? C.accent : C.textMuted, fontWeight: isToday ? '900' : '400' }]}>{TRAINING_DAYS[idx]}</Text>
+                  {done
+                    ? <Ionicons name="checkmark-circle" size={20} color={C.accent} style={{ marginVertical: 4 }} />
+                    : day.rest
+                      ? <Ionicons name="moon-outline" size={20} color={C.textMuted} style={{ marginVertical: 4 }} />
+                      : <View style={[wp.dayDot, { backgroundColor: isToday ? C.accent : isPast ? C.border : C.border }]} />
+                  }
+                  <Text style={[{ fontSize: 9, textAlign: 'center', color: done ? C.accent : day.rest ? C.textMuted : isToday ? C.text : C.textMuted, fontWeight: isToday || done ? '700' : '400' }]} numberOfLines={2}>
+                    {day.rest ? 'Rest' : day.title}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+
+        {/* ── Week List ── */}
+        <View style={{ paddingHorizontal: S.md, marginTop: S.xl }}>
+          <Text style={[T.h4, { marginBottom: S.sm }]}>Program Overview</Text>
+          {program.weeks.map((w, i) => {
+            const isPast    = i < weekIdx;
+            const isCurrent = i === weekIdx;
+            const weeksCompletedDays = w.days.filter(d => !d.rest && completedSet.has(dayKey(w.weekNumber, d.dayNumber))).length;
+            const weekTotal = w.days.filter(d => !d.rest).length;
+            return (
+              <View key={i} style={[wp.weekPill, isCurrent && { backgroundColor: C.accentDim, borderColor: C.accent + '55' }, isPast && { borderColor: C.success + '44' }]}>
                 <Ionicons
-                  name={i < weekOffset ? 'checkmark-circle' : i === weekOffset ? 'radio-button-on' : 'ellipse-outline'}
-                  size={13}
-                  color={i < weekOffset ? C.success : i === weekOffset ? C.accent : C.textMuted}
+                  name={isPast ? 'checkmark-circle' : isCurrent ? 'radio-button-on' : 'ellipse-outline'}
+                  size={14}
+                  color={isPast ? C.success : isCurrent ? C.accent : C.textMuted}
                 />
-                <Text style={[T.cap, { flex: 1, color: i <= weekOffset ? C.text : C.textMuted, fontWeight: i === weekOffset ? '700' : '400' }]}>
-                  {w.label}
-                </Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[T.cap, { color: isCurrent || isPast ? C.text : C.textMuted, fontWeight: isCurrent ? '800' : '400' }]}>
+                    Week {w.weekNumber} — {w.theme}
+                  </Text>
+                  {isCurrent && (
+                    <Text style={[T.cap, { color: C.accent, fontSize: 10 }]}>{weeksCompletedDays}/{weekTotal} sessions done</Text>
+                  )}
+                </View>
               </View>
-            ))}
-          </View>
+            );
+          })}
+        </View>
+
+        {/* ── Switch Program ── */}
+        <View style={{ paddingHorizontal: S.md, marginTop: S.xl }}>
+          <TouchableOpacity
+            onPress={() => setSwitchModal(true)}
+            style={wp.switchLink}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="swap-horizontal" size={14} color={C.textMuted} />
+            <Text style={[T.cap, { color: C.textMuted }]}>Browse other programs</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* ── Day Detail Modal ── */}
+      <Modal visible={!!selectedDay} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setSelectedDay(null)}>
+        {selectedDay && (
+          <View style={{ flex: 1, backgroundColor: C.bg }}>
+            <LinearGradient colors={[C.bg, '#0D0D0F']} style={StyleSheet.absoluteFill} />
+            <View style={wp.modalHeader}>
+              <TouchableOpacity onPress={() => setSelectedDay(null)} style={wp.modalClose} activeOpacity={0.7}>
+                <Ionicons name="close" size={20} color={C.text} />
+              </TouchableOpacity>
+              <View style={{ flex: 1, marginLeft: S.sm }}>
+                <Text style={[T.label, { color: C.accent }]}>WEEK {selectedDay.week.weekNumber} · DAY {selectedDay.day.dayNumber}</Text>
+                <Text style={[T.h3, { marginTop: 2 }]}>{selectedDay.day.title}</Text>
+              </View>
+            </View>
+            <ScrollView contentContainerStyle={{ paddingHorizontal: S.md, paddingBottom: 120 }}>
+              {selectedDay.day.items.map((item, i) => (
+                <View key={i} style={wp.itemRow}>
+                  <View style={wp.itemBullet} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[T.h4, { fontSize: 15 }]}>{item.name}</Text>
+                    <Text style={[T.cap, { color: C.textSub, marginTop: 2 }]}>
+                      {item.sets > 1 ? `${item.sets} sets` : ''}{item.sets > 1 && item.detail ? ' · ' : ''}{item.detail}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+            <View style={{ paddingHorizontal: S.md, paddingBottom: insets.bottom + S.lg }}>
+              {completedSet.has(dayKey(selectedDay.week.weekNumber, selectedDay.day.dayNumber)) ? (
+                <View style={[wp.doneTag]}>
+                  <Ionicons name="checkmark-circle" size={18} color={C.accent} />
+                  <Text style={[T.h4, { color: C.accent }]}>Session complete</Text>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={wp.markBtn}
+                  onPress={() => markDayComplete(selectedDay.week, selectedDay.day)}
+                  activeOpacity={0.85}
+                >
+                  <LinearGradient colors={G.accent} style={wp.markGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                    <Ionicons name="checkmark" size={18} color={C.black} />
+                    <Text style={[T.h4, { color: C.black, fontWeight: '900' }]}>Mark Complete</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        )}
+      </Modal>
+
+      {/* ── Switch Program Modal ── */}
+      <Modal visible={switchModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setSwitchModal(false)}>
+        <View style={{ flex: 1, backgroundColor: C.bg }}>
+          <LinearGradient colors={[C.bg, '#0D0D0F']} style={StyleSheet.absoluteFill} />
+          <View style={wp.modalHeader}>
+            <TouchableOpacity onPress={() => setSwitchModal(false)} style={wp.modalClose} activeOpacity={0.7}>
+              <Ionicons name="close" size={20} color={C.text} />
+            </TouchableOpacity>
+            <Text style={[T.h3, { marginLeft: S.sm }]}>Choose Program</Text>
+          </View>
+          <ScrollView contentContainerStyle={{ paddingHorizontal: S.md, paddingBottom: 60 }}>
+            {PROGRAMS.map(prog => {
+              const isActive = prog.id === activeProgramId;
+              return (
+                <TouchableOpacity
+                  key={prog.id}
+                  style={[wp.progCard, isActive && { borderColor: C.accent, backgroundColor: C.accentDim }]}
+                  onPress={() => {
+                    if (isActive) { setSwitchModal(false); return; }
+                    setSwitchTarget(prog.id);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={[T.h4, { color: isActive ? C.accent : C.text }]}>{prog.title}</Text>
+                    <Text style={[T.cap, { color: C.textSub, marginTop: 2 }]}>{prog.subtitle}</Text>
+                    <Text style={[T.cap, { color: C.textMuted, marginTop: 2 }]}>{prog.weeks.length} weeks · Levels {prog.levelRange[0]}–{prog.levelRange[1]}</Text>
+                  </View>
+                  {isActive && <Ionicons name="checkmark-circle" size={20} color={C.accent} />}
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </Modal>
+
+      {/* ── Confirm Switch ── */}
+      <Modal visible={!!switchTarget} animationType="fade" transparent>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', alignItems: 'center', justifyContent: 'center', padding: S.lg }}>
+          <View style={{ backgroundColor: C.bgCard, borderRadius: R.xxl, padding: S.lg, width: '100%', borderWidth: 1, borderColor: C.border }}>
+            <Text style={[T.h3, { textAlign: 'center', marginBottom: S.sm }]}>Switch Program?</Text>
+            <Text style={[T.body, { textAlign: 'center', marginBottom: S.lg }]}>
+              Switching will reset your progress on the current program.
+            </Text>
+            <TouchableOpacity style={[wp.markBtn, { marginBottom: S.sm }]} onPress={() => confirmSwitchProgram(switchTarget)} activeOpacity={0.85}>
+              <LinearGradient colors={G.accent} style={wp.markGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                <Text style={[T.h4, { color: C.black, fontWeight: '900' }]}>Switch Program</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setSwitchTarget(null)} style={{ alignItems: 'center', padding: S.sm }} activeOpacity={0.7}>
+              <Text style={[T.small, { color: C.textMuted }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {!isPro() && <ProLockOverlay featureLabel="Weekly Training Plan" featureIcon="📋" />}
     </View>
   );
 }
 
 const wp = StyleSheet.create({
-  header:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: S.md, paddingTop: S.md, paddingBottom: S.sm },
-  weekBadge:      { paddingHorizontal: S.sm, paddingVertical: 4, borderRadius: R.full, borderWidth: 1 },
-  focusCard:      { marginHorizontal: S.md, marginBottom: S.md, borderRadius: R.xl, overflow: 'hidden', borderWidth: 1, borderColor: C.border },
-  focusGrad:      { padding: S.lg },
-  calSection:     { marginHorizontal: S.md, marginBottom: S.md },
-  dayRow:         { flexDirection: 'row', gap: S.xs },
-  dayCell:        { flex: 1, alignItems: 'center', paddingVertical: S.sm, borderRadius: R.lg, backgroundColor: C.bgCard, borderWidth: 1, borderColor: C.border },
-  dayCellActive:  { backgroundColor: C.bgCardElevated, borderColor: C.accent + '66' },
-  dayCellToday:   { backgroundColor: C.accent, borderColor: C.accent, borderWidth: 2 },
-  dayDot:         { width: 5, height: 5, borderRadius: 3, marginTop: 3 },
-  todayCard:      { flexDirection: 'row', alignItems: 'center', gap: S.sm, marginHorizontal: S.md, marginBottom: S.md, padding: S.md, backgroundColor: C.bgCard, borderRadius: R.xl, borderWidth: 1 },
-  todayIcon:      { width: 48, height: 48, borderRadius: R.lg, alignItems: 'center', justifyContent: 'center' },
-  startBtn:       { borderRadius: R.full, overflow: 'hidden' },
-  startGrad:      { paddingHorizontal: S.md, paddingVertical: S.sm },
-  phaseCard:      { marginHorizontal: S.md, marginBottom: S.xs, backgroundColor: C.bgCard, borderRadius: R.lg, borderWidth: 1, borderColor: C.border, overflow: 'hidden' },
-  phaseCardActive:{ borderColor: C.accent + '66' },
-  phaseHeader:    { flexDirection: 'row', alignItems: 'center', padding: S.md },
-  phaseBody:      { paddingHorizontal: S.md, paddingBottom: S.md },
-  phaseDivider:   { height: 1, backgroundColor: C.border, marginBottom: S.sm },
-  exRow:          { flexDirection: 'row', alignItems: 'flex-start', gap: S.sm, marginBottom: S.xs },
-  exBullet:       { width: 6, height: 6, borderRadius: 3, backgroundColor: C.accent, marginTop: 7 },
-  recordCta:      { marginTop: S.sm, borderRadius: R.full, overflow: 'hidden' },
-  recordGrad:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: S.xs, paddingVertical: S.sm },
-  restCard:       { flexDirection: 'row', alignItems: 'flex-start', gap: S.sm, marginHorizontal: S.md, marginBottom: S.xs, padding: S.md, backgroundColor: C.bgCard, borderRadius: R.xl, borderWidth: 1, borderColor: C.border },
-  progressSection:{ marginHorizontal: S.md },
-  progressHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: S.sm },
-  weeksList:      { marginTop: S.sm, gap: S.xs },
-  weekPill:       { flexDirection: 'row', alignItems: 'center', gap: S.sm, padding: S.sm, backgroundColor: C.bgCard, borderRadius: R.lg, borderWidth: 1, borderColor: C.border },
+  header:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: S.md, paddingTop: S.md, paddingBottom: S.sm },
+  weekBadge:     { paddingHorizontal: S.sm, paddingVertical: 4, borderRadius: R.full, borderWidth: 1 },
+  programCard:   { marginHorizontal: S.md, marginBottom: S.md, borderRadius: R.xl, overflow: 'hidden', borderWidth: 1, borderColor: C.border },
+  programGrad:   { padding: S.lg },
+  todayHero:     { marginHorizontal: S.md, marginBottom: S.md, borderRadius: R.xl, padding: S.lg, borderWidth: 1, borderColor: C.accent + '44', overflow: 'hidden' },
+  restHero:      { flexDirection: 'row', alignItems: 'center', marginHorizontal: S.md, marginBottom: S.md, padding: S.md, backgroundColor: C.bgCard, borderRadius: R.xl, borderWidth: 1 },
+  startBtn:      { borderRadius: R.xxl, overflow: 'hidden', alignSelf: 'flex-start' },
+  startGrad:     { flexDirection: 'row', alignItems: 'center', gap: S.sm, paddingHorizontal: S.lg, paddingVertical: S.sm + 2 },
+  dayCard:       { width: 68, alignItems: 'center', backgroundColor: C.bgCard, borderRadius: R.lg, borderWidth: 1, borderColor: C.border, padding: S.sm, gap: 2 },
+  dayCardToday:  { borderColor: C.accent, backgroundColor: C.accentDim },
+  dayCardDone:   { borderColor: C.accent + '66' },
+  dayCardRest:   { opacity: 0.5 },
+  dayDot:        { width: 8, height: 8, borderRadius: 4, marginVertical: 4 },
+  weekPill:      { flexDirection: 'row', alignItems: 'center', gap: S.sm, padding: S.sm + 2, backgroundColor: C.bgCard, borderRadius: R.lg, borderWidth: 1, borderColor: C.border, marginBottom: S.xs },
+  switchLink:    { flexDirection: 'row', alignItems: 'center', gap: S.xs, alignSelf: 'center', paddingVertical: S.sm },
+  modalHeader:   { flexDirection: 'row', alignItems: 'center', padding: S.md, borderBottomWidth: 1, borderBottomColor: C.border },
+  modalClose:    { width: 36, height: 36, borderRadius: R.full, backgroundColor: C.bgCard, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.border },
+  itemRow:       { flexDirection: 'row', alignItems: 'flex-start', gap: S.md, paddingVertical: S.md, borderBottomWidth: 1, borderBottomColor: C.border },
+  itemBullet:    { width: 8, height: 8, borderRadius: 4, backgroundColor: C.accent, marginTop: 7 },
+  doneTag:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: S.sm, padding: S.md },
+  markBtn:       { borderRadius: R.xxl, overflow: 'hidden' },
+  markGrad:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: S.sm, paddingVertical: S.md + 2 },
+  progCard:      { backgroundColor: C.bgCard, borderRadius: R.xl, borderWidth: 1, borderColor: C.border, padding: S.md, marginBottom: S.sm, flexDirection: 'row', alignItems: 'center' },
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PREVIEW MODE — banner + gate wrapper
+// ─────────────────────────────────────────────────────────────────────────────
+
+function PreviewBanner() {
+  const { isPreview, triggerGate } = useContext(PreviewContext);
+  const slideAnim = useRef(new Animated.Value(-40)).current;
+
+  useEffect(() => {
+    Animated.spring(slideAnim, {
+      toValue: isPreview ? 0 : -40,
+      tension: 80, friction: 12, useNativeDriver: true,
+    }).start();
+  }, [isPreview]);
+
+  if (!isPreview) return null;
+  return (
+    <Animated.View style={[pv.banner, { transform: [{ translateY: slideAnim }] }]}>
+      <View style={pv.bannerDot} />
+      <Text style={pv.bannerText}>Preview mode — Sign up to save your progress</Text>
+      <TouchableOpacity onPress={triggerGate} activeOpacity={0.8} style={pv.bannerBtn}>
+        <Text style={pv.bannerBtnText}>Sign up</Text>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+
+const pv = StyleSheet.create({
+  banner:      { flexDirection: 'row', alignItems: 'center', backgroundColor: C.bgCard, borderBottomWidth: 1, borderBottomColor: C.accent + '40', paddingHorizontal: S.md, paddingVertical: 10, gap: S.sm },
+  bannerDot:   { width: 7, height: 7, borderRadius: 4, backgroundColor: C.accent },
+  bannerText:  { flex: 1, fontSize: 12, color: C.textSub, fontWeight: '500' },
+  bannerBtn:   { backgroundColor: C.accent, borderRadius: R.full, paddingHorizontal: S.sm, paddingVertical: 4 },
+  bannerBtnText: { fontSize: 11, fontWeight: '900', color: C.black },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SIGNUP GATE MODAL — shown after preview triggers (step 5 of new flow)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const USER_EMAIL_KEY = 'user_email';
+
+function SignupGateModal({ visible, assignedLevel, onComplete }) {
+  const insets = useSafeAreaInsets();
+  const [nameInput,  setNameInput]  = useState('');
+  const [emailInput, setEmailInput] = useState('');
+  const [emailFocus, setEmailFocus] = useState(false);
+  const [nameFocus,  setNameFocus]  = useState(false);
+  const [loading,    setLoading]    = useState(false);
+  const slideAnim = useRef(new Animated.Value(80)).current;
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.parallel([
+        Animated.timing(fadeAnim,  { toValue: 1, duration: 250, useNativeDriver: true }),
+        Animated.spring(slideAnim, { toValue: 0, tension: 60, friction: 12, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [visible]);
+
+  const isValidEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
+  const canSubmit = nameInput.trim().length > 0 && isValidEmail(emailInput);
+
+  const handleContinue = async () => {
+    if (!canSubmit || loading) return;
+    setLoading(true);
+    try {
+      const name  = nameInput.trim();
+      const email = emailInput.trim().toLowerCase();
+      await AsyncStorage.multiSet([
+        [USER_NAME_KEY,       name],
+        [USER_EMAIL_KEY,      email],
+        [SIGNUP_COMPLETE_KEY, 'true'],
+      ]);
+      // Persist name into progress store
+      const raw = await AsyncStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const p = JSON.parse(raw);
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ ...p, userName: name }));
+      }
+      onComplete(name);
+    } catch (_) {
+      setLoading(false);
+    }
+  };
+
+  if (!visible) return null;
+
+  return (
+    <Modal visible={visible} animationType="none" transparent={false} statusBarTranslucent>
+      <KeyboardAvoidingView
+        style={{ flex: 1, backgroundColor: C.bg, paddingTop: insets.top, paddingBottom: insets.bottom + S.lg }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <LinearGradient colors={[C.bg, '#0D0D0F', C.bg]} style={StyleSheet.absoluteFill} />
+        <View style={sg.decoTop} />
+        <View style={sg.decoBot} />
+
+        <Animated.ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={sg.content}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          style={[{ opacity: fadeAnim }]}
+        >
+          {/* Header */}
+          <View style={sg.header}>
+            <View style={sg.logoBg}>
+              <Text style={{ fontSize: 36 }}>🤸</Text>
+            </View>
+            <Text style={[T.label, { color: C.accent, marginTop: S.lg, marginBottom: S.xs }]}>CREATE FREE ACCOUNT</Text>
+            <Text style={[T.h2, { textAlign: 'center', marginBottom: S.xs }]}>Save your progress</Text>
+            <Text style={[T.body, { textAlign: 'center', maxWidth: 280, lineHeight: 22 }]}>
+              Create a free account to unlock your{'\n'}
+              <Text style={{ color: C.accent, fontWeight: '700' }}>Level {assignedLevel} program</Text>
+            </Text>
+          </View>
+
+          {/* Form */}
+          <View style={sg.form}>
+            <TextInput
+              style={[sg.input, nameFocus && sg.inputFocused]}
+              value={nameInput}
+              onChangeText={setNameInput}
+              onFocus={() => setNameFocus(true)}
+              onBlur={() => setNameFocus(false)}
+              placeholder="Your name"
+              placeholderTextColor={C.textMuted}
+              maxLength={30}
+              autoCapitalize="words"
+              returnKeyType="next"
+            />
+            <TextInput
+              style={[sg.input, emailFocus && sg.inputFocused]}
+              value={emailInput}
+              onChangeText={setEmailInput}
+              onFocus={() => setEmailFocus(true)}
+              onBlur={() => setEmailFocus(false)}
+              placeholder="Email address"
+              placeholderTextColor={C.textMuted}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="done"
+              onSubmitEditing={handleContinue}
+            />
+
+            <TouchableOpacity
+              style={[sg.primaryBtn, (!canSubmit || loading) && { opacity: 0.4 }]}
+              onPress={handleContinue}
+              activeOpacity={0.85}
+              disabled={!canSubmit || loading}
+            >
+              <LinearGradient colors={G.accent} style={sg.primaryGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                {loading
+                  ? <ActivityIndicator color={C.black} size="small" />
+                  : <>
+                      <Text style={sg.primaryLabel}>Continue</Text>
+                      <Ionicons name="arrow-forward" size={18} color={C.black} />
+                    </>
+                }
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <Text style={sg.comingSoon}>We'll add Apple and Google sign-in soon</Text>
+          </View>
+        </Animated.ScrollView>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+const sg = StyleSheet.create({
+  content:      { alignItems: 'center', paddingHorizontal: S.lg, paddingBottom: S.xl },
+  header:       { alignItems: 'center', paddingTop: S.xl },
+  logoBg:       { width: 80, height: 80, borderRadius: 24, backgroundColor: C.accentDim, borderWidth: 1, borderColor: C.accent + '44', alignItems: 'center', justifyContent: 'center' },
+  decoTop:      { position: 'absolute', width: 240, height: 240, borderRadius: 120, backgroundColor: C.accent + '07', top: -80, right: -80 },
+  decoBot:      { position: 'absolute', width: 160, height: 160, borderRadius: 80, backgroundColor: C.accent + '05', bottom: 60, left: -50 },
+  form:         { width: '100%', marginTop: S.xl, gap: S.sm },
+  input:        { backgroundColor: C.bgCard, borderRadius: R.xl, paddingHorizontal: S.md, paddingVertical: S.md + 2, fontSize: 16, color: C.text, borderWidth: 1.5, borderColor: C.border },
+  inputFocused: { borderColor: C.accent },
+  primaryBtn:   { borderRadius: R.xxl, overflow: 'hidden', marginTop: S.xs },
+  primaryGrad:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: S.sm, paddingVertical: S.md + 2 },
+  primaryLabel: { fontSize: 15, fontWeight: '900', color: C.black, textTransform: 'uppercase' },
+  comingSoon:   { textAlign: 'center', fontSize: 12, color: C.textMuted, marginTop: S.md },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NOTIFICATIONS STEP — shown after signup (step 6 of new flow)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function NotificationsStep({ onComplete }) {
+  const insets = useSafeAreaInsets();
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
+  }, []);
+
+  return (
+    <View style={{ flex: 1, backgroundColor: C.bg, paddingTop: insets.top, paddingBottom: insets.bottom + S.lg }}>
+      <LinearGradient colors={[C.bg, '#0D0D0F', C.bg]} style={StyleSheet.absoluteFill} />
+      <Animated.View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: S.lg, opacity: fadeAnim }}>
+        <Text style={[T.label, { color: C.accent, marginBottom: S.sm }]}>STAY CONSISTENT</Text>
+        <Text style={{ fontSize: 56, marginBottom: S.sm }}>🔔</Text>
+        <Text style={[T.h2, { textAlign: 'center', marginBottom: S.xs }]}>Never Miss a Session</Text>
+        <Text style={[T.body, { textAlign: 'center', marginBottom: S.xl, maxWidth: 300, lineHeight: 22 }]}>
+          Enable daily reminders and streak alerts so you never lose momentum.
+        </Text>
+        {[
+          { icon: '⏰', title: 'Daily training reminder', desc: "We'll nudge you each morning" },
+          { icon: '🔥', title: 'Streak protection alerts', desc: "Don't break your streak — trained yet?" },
+          { icon: '📊', title: 'Weekly progress summary', desc: 'Sunday recap of your training week' },
+        ].map(item => (
+          <View key={item.title} style={[ob.levelPill, { marginBottom: S.xs }]}>
+            <Text style={{ fontSize: 24 }}>{item.icon}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={T.h4}>{item.title}</Text>
+              <Text style={T.cap}>{item.desc}</Text>
+            </View>
+          </View>
+        ))}
+      </Animated.View>
+
+      <View style={{ paddingHorizontal: S.lg, gap: S.sm }}>
+        <TouchableOpacity
+          style={ob.primaryBtn}
+          onPress={async () => {
+            const status = await requestNotifPermission();
+            if (status === 'granted') {
+              const settings = { ...DEFAULT_NOTIF_SETTINGS, enabled: true };
+              await _saveNotifSettings(settings);
+              await scheduleAllNotifications(settings, 1);
+            }
+            onComplete();
+          }}
+          activeOpacity={0.85}
+        >
+          <LinearGradient colors={G.accent} style={ob.primaryGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+            <Text style={[T.h4, { color: C.black, fontSize: 16, fontWeight: '900' }]}>ENABLE REMINDERS</Text>
+            <Ionicons name="notifications-outline" size={18} color={C.black} />
+          </LinearGradient>
+        </TouchableOpacity>
+        <TouchableOpacity style={ob.skipBtn} onPress={onComplete} activeOpacity={0.7}>
+          <Text style={[T.small, { color: C.textMuted }]}>Skip — I'll set this up later</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AUTH SCREENS
@@ -6520,9 +7095,12 @@ const NAV_THEME = {
 function CustomTabBar({ state, descriptors, navigation }) {
   const insets = useSafeAreaInsets();
   const { isPro, showPaywall } = useContext(PurchaseContext);
+  const { isPreview, triggerGate } = useContext(PreviewContext);
 
   // Plan and Progress tabs are Pro-only features
-  const PRO_TABS = new Set(['Plan', 'Progress']);
+  const PRO_TABS     = new Set(['Plan', 'Progress']);
+  // Profile and Progress trigger the signup gate in preview mode
+  const GATED_TABS   = new Set(['Profile', 'Progress']);
 
   return (
     <View style={[tb.bar, { paddingBottom: insets.bottom > 0 ? insets.bottom + 8 : 16 }]}>
@@ -6541,6 +7119,7 @@ function CustomTabBar({ state, descriptors, navigation }) {
         }[route.name];
 
         const onPress = () => {
+          if (isPreview && GATED_TABS.has(route.name)) { triggerGate(); return; }
           // Always allow navigation — Pro tabs show a sneak-peek with an in-screen overlay
           const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
           if (!isFocused && !event.defaultPrevented) navigation.navigate(route.name);
@@ -6592,133 +7171,257 @@ function HomeTabs() {
 // ─────────────────────────────────────────────────────────────────────────────
 // APP ROOT
 // ─────────────────────────────────────────────────────────────────────────────
-// The main navigation stack for the authenticated, post-onboarding app
-function MainApp() {
+// Wraps a screen in a hook-safe component that gates it in preview mode
+function GatedRoute({ component: Component, navigation, ...rest }) {
+  const { isPreview, triggerGate } = useContext(PreviewContext);
+  useEffect(() => {
+    if (isPreview) {
+      navigation.goBack();
+      triggerGate();
+    }
+  }, [isPreview]);
+  if (isPreview) return null;
+  return <Component navigation={navigation} {...rest} />;
+}
+
+// The main navigation stack for the post-quiz app (preview + full)
+function MainApp({ isPreview = false, onTriggerGate }) {
   const { loading } = useContext(UserProgressContext);
+
+  const triggerGate = useCallback(() => {
+    if (isPreview && onTriggerGate) onTriggerGate();
+  }, [isPreview, onTriggerGate]);
+
   return (
-    <OfflineProvider>
-      <View style={{ flex: 1 }}>
-        <OfflineBanner />
-        <NavigationContainer theme={NAV_THEME}>
-          <Stack.Navigator
-            screenOptions={{
-              headerShown: false,
-              contentStyle: { backgroundColor: C.bg },
-              animation: 'slide_from_right',
-            }}
-          >
-            <Stack.Screen name="Main"             component={HomeTabs} />
-            <Stack.Screen name="LevelDetail"      component={LevelDetailScreen}      options={{ animation: 'slide_from_bottom' }} />
-            <Stack.Screen name="WristWarmup"      component={WristWarmupScreen}      options={{ animation: 'slide_from_bottom' }} />
-            <Stack.Screen name="VideoSubmission"  component={VideoSubmissionScreen}  options={{ animation: 'slide_from_bottom', gestureEnabled: false }} />
-            <Stack.Screen name="SubmissionReview" component={SubmissionReviewScreen} options={{ animation: 'fade', gestureEnabled: false }} />
-          </Stack.Navigator>
-        </NavigationContainer>
-        <SplashScreen visible={loading} />
-      </View>
-    </OfflineProvider>
+    <PreviewContext.Provider value={{ isPreview, triggerGate }}>
+      <OfflineProvider>
+        <View style={{ flex: 1 }}>
+          <OfflineBanner />
+          <PreviewBanner />
+          <NavigationContainer theme={NAV_THEME}>
+            <Stack.Navigator
+              screenOptions={{
+                headerShown: false,
+                contentStyle: { backgroundColor: C.bg },
+                animation: 'slide_from_right',
+              }}
+            >
+              <Stack.Screen name="Main"             component={HomeTabs} />
+              <Stack.Screen name="LevelDetail"      component={LevelDetailScreen}      options={{ animation: 'slide_from_bottom' }} />
+              <Stack.Screen name="WristWarmup"      options={{ animation: 'slide_from_bottom' }}>
+                {(props) => <GatedRoute {...props} component={WristWarmupScreen} />}
+              </Stack.Screen>
+              <Stack.Screen name="VideoSubmission"  options={{ animation: 'slide_from_bottom', gestureEnabled: false }}>
+                {(props) => <GatedRoute {...props} component={VideoSubmissionScreen} />}
+              </Stack.Screen>
+              <Stack.Screen name="SubmissionReview" component={SubmissionReviewScreen} options={{ animation: 'fade', gestureEnabled: false }} />
+            </Stack.Navigator>
+          </NavigationContainer>
+          <SplashScreen visible={loading} />
+        </View>
+      </OfflineProvider>
+    </PreviewContext.Provider>
   );
 }
 
-// Auth navigator (unauthenticated / pre-onboarding)
+// Auth navigator — kept for users who want to log in from ProfileScreen settings
 function AuthApp({ onAuthSuccess, onSkip }) {
   return (
     <NavigationContainer theme={NAV_THEME}>
       <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: C.bg }, animation: 'slide_from_right' }}>
-        <Stack.Screen name="Welcome"         component={WelcomeScreen} />
-        <Stack.Screen name="SignUp"          component={SignUpScreen} />
+        <Stack.Screen name="Welcome"        component={WelcomeScreen} />
+        <Stack.Screen name="SignUp"         component={SignUpScreen} />
         <Stack.Screen name="Login">
           {(props) => <LoginScreen {...props} onAuthSuccess={onAuthSuccess} onSkip={onSkip} />}
         </Stack.Screen>
-        <Stack.Screen name="ForgotPassword"  component={ForgotPasswordScreen} />
-        <Stack.Screen name="AppOnboarding">
-          {() => (
-            <PurchaseProvider>
-              <MilestoneProvider>
-                <UserProgressProvider>
-                  <OnboardingQuiz onComplete={onSkip} />
-                </UserProgressProvider>
-              </MilestoneProvider>
-            </PurchaseProvider>
-          )}
-        </Stack.Screen>
+        <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
 }
 
-// Defined outside App() so it is a stable component reference and never
-// re-created on each render — prevents unnecessary remounts of the auth tree.
-function AuthStateGate({ onboardingDone, onboardingChecked, checkOnboarding, setOnboardingDone }) {
-  const { authLoading, isAuthenticated } = useContext(AuthContext);
-  if (authLoading || !onboardingChecked) {
-    return (
-      <View style={{ flex: 1, backgroundColor: C.bg }}>
-        <SplashScreen visible />
-      </View>
-    );
-  }
-  // Authenticated + onboarding done → main app
-  if (isAuthenticated && onboardingDone) {
-    return (
-      <PurchaseProvider>
-        <MilestoneProvider>
-          <UserProgressProvider onReset={checkOnboarding}>
-            <MainApp />
-          </UserProgressProvider>
-        </MilestoneProvider>
-      </PurchaseProvider>
-    );
-  }
-  // Authenticated but onboarding not done → onboarding
-  if (isAuthenticated && !onboardingDone) {
-    return (
-      <PurchaseProvider>
-        <MilestoneProvider>
-          <UserProgressProvider>
-            <OnboardingQuiz onComplete={(refresh) => {
-              if (refresh) refresh();
-              setOnboardingDone(true);
-            }} />
-          </UserProgressProvider>
-        </MilestoneProvider>
-      </PurchaseProvider>
-    );
-  }
-  // Not authenticated → show auth flow
-  return (
-    <AuthApp
-      onAuthSuccess={() => checkOnboarding()}
-      onSkip={(refresh) => {
-        if (refresh) refresh();
-        setOnboardingDone(true);
-      }}
-    />
-  );
-}
-
+// ─────────────────────────────────────────────────────────────────────────────
+// STAGE-BASED ROOT ROUTER
+//
+// Stages (stored/derived from AsyncStorage):
+//   'loading'       — reading keys
+//   'quiz'          — first open: show Welcome + 7 questions
+//   'preview'       — quiz done, signup not yet done
+//   'signup_gate'   — preview triggered gate (or force-close during preview)
+//   'notifications' — signup done, notifications not asked yet
+//   'app'           — fully onboarded
+// ─────────────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [onboardingDone,    setOnboardingDone]    = useState(false);
-  const [onboardingChecked, setOnboardingChecked] = useState(false);
+  const [stage,         setStage]         = useState('loading');
+  const [assignedLevel, setAssignedLevel] = useState(1);
+  const [gateVisible,   setGateVisible]   = useState(false);
 
-  const checkOnboarding = useCallback(() => {
-    setOnboardingChecked(false);
-    AsyncStorage.getItem(ONBOARDING_KEY)
-      .then(val => { setOnboardingDone(val === 'true'); setOnboardingChecked(true); })
-      .catch(()  => { setOnboardingDone(false); setOnboardingChecked(true); });
+  // Read all relevant keys on launch and derive stage
+  useEffect(() => {
+    (async () => {
+      try {
+        const [quizDone, previewMode, signupDone, userName] =
+          await AsyncStorage.multiGet([QUIZ_COMPLETE_KEY, PREVIEW_MODE_KEY, SIGNUP_COMPLETE_KEY, USER_NAME_KEY])
+            .then(pairs => pairs.map(([, v]) => v));
+
+        const level = await AsyncStorage.getItem(QUIZ_LEVEL_KEY);
+        if (level) setAssignedLevel(parseInt(level, 10) || 1);
+
+        // Existing users who completed the old full onboarding (have user_name) → app
+        if (userName) { setStage('app'); return; }
+
+        if (!quizDone) { setStage('quiz'); return; }
+
+        // Quiz done but signup not done
+        if (!signupDone) {
+          // If preview_mode was set (app was closed mid-preview), go straight to gate
+          if (previewMode === 'true') { setStage('signup_gate'); return; }
+          setStage('preview'); return;
+        }
+
+        // Signup done but we're here — notifications step
+        setStage('notifications');
+      } catch (_) {
+        setStage('quiz');
+      }
+    })();
   }, []);
 
-  useEffect(() => { checkOnboarding(); }, []);
+  // Called by OnboardingQuiz celebration screen after 2s
+  const handleQuizComplete = useCallback(async (level) => {
+    setAssignedLevel(level);
+    // Mark quiz complete and preview mode active
+    try {
+      await AsyncStorage.multiSet([
+        [QUIZ_COMPLETE_KEY, 'true'],
+        [PREVIEW_MODE_KEY,  'true'],
+      ]);
+      // Save level into progress store
+      const today = new Date().toDateString();
+      const initial = {
+        ...DEFAULT_PROGRESS,
+        currentLevel:   Math.min(level, EXERCISE_LEVELS.length),
+        streak:         1,
+        lastActiveDate: today,
+      };
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
+      await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
+    } catch (_) {}
+    setStage('preview');
+  }, []);
+
+  // Called when preview mode triggers the signup gate
+  const handleTriggerGate = useCallback(async () => {
+    try { await AsyncStorage.setItem(PREVIEW_MODE_KEY, 'true'); } catch (_) {}
+    setStage('signup_gate');
+  }, []);
+
+  // Called after SignupGateModal completes
+  const handleSignupComplete = useCallback(async (name) => {
+    try {
+      await AsyncStorage.multiSet([
+        [SIGNUP_COMPLETE_KEY, 'true'],
+        [PREVIEW_MODE_KEY,    'false'],
+      ]);
+      // Update progress with name
+      const raw = await AsyncStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const p = JSON.parse(raw);
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ ...p, userName: name }));
+      }
+    } catch (_) {}
+    setStage('notifications');
+  }, []);
+
+  // Called after notifications step completes
+  const handleNotifComplete = useCallback(() => {
+    setStage('app');
+  }, []);
+
+  // Reset (logout / reset progress) — clears ALL user-specific keys
+  const handleReset = useCallback(async () => {
+    try {
+      await AsyncStorage.multiRemove([
+        STORAGE_KEY, ONBOARDING_KEY,
+        QUIZ_COMPLETE_KEY, QUIZ_ANSWERS_KEY, QUIZ_LEVEL_KEY,
+        PREVIEW_MODE_KEY, SIGNUP_COMPLETE_KEY,
+        USER_NAME_KEY, USER_EMAIL_KEY,
+        AVATAR_KEY,
+        NOTIFICATIONS_KEY, PLAN_KEY, MIGRATION_KEY,
+        MILESTONES_KEY, WEEKLY_SUMMARY_KEY, AI_QUEUE_KEY,
+      ]);
+    } catch (_) {}
+    setAssignedLevel(1);
+    setStage('quiz');
+  }, []);
+
+  if (stage === 'loading') {
+    return (
+      <SafeAreaProvider>
+        <View style={{ flex: 1, backgroundColor: C.bg }}>
+          <SplashScreen visible />
+        </View>
+      </SafeAreaProvider>
+    );
+  }
 
   return (
     <SafeAreaProvider>
       <AuthProvider>
-        <AuthStateGate
-          onboardingDone={onboardingDone}
-          onboardingChecked={onboardingChecked}
-          checkOnboarding={checkOnboarding}
-          setOnboardingDone={setOnboardingDone}
-        />
+        {/* QUIZ — Welcome + 7 questions + celebration */}
+        {stage === 'quiz' && (
+          <PurchaseProvider>
+            <MilestoneProvider>
+              <UserProgressProvider>
+                <OnboardingQuiz onComplete={handleQuizComplete} />
+              </UserProgressProvider>
+            </MilestoneProvider>
+          </PurchaseProvider>
+        )}
+
+        {/* PREVIEW — user browses freely, gate shown on trigger */}
+        {stage === 'preview' && (
+          <PurchaseProvider>
+            <MilestoneProvider>
+              <UserProgressProvider onReset={handleReset}>
+                <MainApp isPreview onTriggerGate={handleTriggerGate} />
+              </UserProgressProvider>
+            </MilestoneProvider>
+          </PurchaseProvider>
+        )}
+
+        {/* SIGNUP GATE — full-screen, not dismissible */}
+        {stage === 'signup_gate' && (
+          <PurchaseProvider>
+            <MilestoneProvider>
+              <UserProgressProvider onReset={handleReset}>
+                {/* Keep MainApp behind the modal so it's not a blank screen */}
+                <MainApp isPreview onTriggerGate={() => {}} />
+                <SignupGateModal
+                  visible
+                  assignedLevel={assignedLevel}
+                  onComplete={handleSignupComplete}
+                />
+              </UserProgressProvider>
+            </MilestoneProvider>
+          </PurchaseProvider>
+        )}
+
+        {/* NOTIFICATIONS STEP */}
+        {stage === 'notifications' && (
+          <NotificationsStep onComplete={handleNotifComplete} />
+        )}
+
+        {/* FULL APP */}
+        {stage === 'app' && (
+          <PurchaseProvider>
+            <MilestoneProvider>
+              <UserProgressProvider onReset={handleReset}>
+                <MainApp />
+              </UserProgressProvider>
+            </MilestoneProvider>
+          </PurchaseProvider>
+        )}
       </AuthProvider>
     </SafeAreaProvider>
   );
