@@ -1183,6 +1183,219 @@ const WRIST_WARMUP = [
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
+// WEAKNESS DIAGNOSIS — data
+// ─────────────────────────────────────────────────────────────────────────────
+const WEAKNESS_QUIZ = [
+  {
+    id: 'q1',
+    question: 'When you kick up to handstand, what usually happens?',
+    multi: false,
+    options: [
+      { label: 'I fall forward (overshoot)',         value: 'fall_forward' },
+      { label: 'I fall back (don\'t reach vertical)',value: 'fall_back'    },
+      { label: 'I fall to the side',                  value: 'fall_side'   },
+      { label: 'I can\'t kick up high enough',        value: 'cant_kick'   },
+      { label: 'I get up but can\'t hold balance',    value: 'cant_hold'   },
+    ],
+  },
+  {
+    id: 'q2',
+    question: 'Where do you feel the most strain?',
+    multi: true,
+    options: [
+      { label: 'Wrists',           value: 'wrists'   },
+      { label: 'Shoulders',        value: 'shoulders'},
+      { label: 'Lower back',       value: 'lower_back'},
+      { label: 'Core',             value: 'core'     },
+      { label: 'Nowhere specific', value: 'none'     },
+    ],
+  },
+  {
+    id: 'q3',
+    question: 'How does your body line look in a handstand?',
+    multi: false,
+    options: [
+      { label: 'Banana back (arched)',     value: 'banana'   },
+      { label: 'Pike (hips bent forward)', value: 'pike'     },
+      { label: 'Straight but unstable',    value: 'straight' },
+      { label: 'I don\'t know',            value: 'unknown'  },
+    ],
+  },
+  {
+    id: 'q4',
+    question: 'How many seconds can you hold against a wall right now?',
+    multi: false,
+    options: [
+      { label: '0–5 seconds',   value: 'hold_0'  },
+      { label: '5–15 seconds',  value: 'hold_5'  },
+      { label: '15–30 seconds', value: 'hold_15' },
+      { label: '30+ seconds',   value: 'hold_30' },
+    ],
+  },
+];
+
+const WEAKNESS_MAP = {
+  fall_forward: {
+    title: 'Overshooting Forward',
+    icon: '⬆️',
+    explanation: 'You\'re kicking too hard or letting your hips swing past vertical. The fix is learning to control the kick and stack your shoulders directly over your wrists.',
+    drills: [
+      {
+        name: 'Chest-to-Wall Handstand',
+        sets: '5 × 20–30 sec',
+        cue: 'Face away from wall, hands close. Feel what vertical actually is.',
+        videoId: 'lb3ZGnLZ474',
+        emoji: '🤸',
+      },
+      {
+        name: 'Shoulder Taps (Wall)',
+        sets: '3 × 10 taps/side',
+        cue: 'Shift weight onto one hand at a time — builds shoulder stacking.',
+        videoId: 'sfPsRW0eypU',
+        emoji: '👋',
+      },
+      {
+        name: 'Hollow Body Hold',
+        sets: '3 × 30 sec',
+        cue: 'Lock the arch out of your back. This translates directly to a straight handstand.',
+        videoId: 'B252KhFvWaY',
+        emoji: '🔥',
+      },
+    ],
+  },
+  fall_back: {
+    title: 'Not Reaching Vertical',
+    icon: '⬇️',
+    explanation: 'Your kick is too weak or your shoulder flexibility is limiting how far you can open up. Build hip flexor flexibility and kick power.',
+    drills: [
+      {
+        name: 'Wall Walks',
+        sets: '3 × 5 reps',
+        cue: 'Walk all the way until your chest touches the wall — feel full shoulder flexion.',
+        videoId: 'sfPsRW0eypU',
+        emoji: '🧱',
+      },
+      {
+        name: 'Pike Hold',
+        sets: '3 × 45 sec',
+        cue: 'Push hips as high as possible. Opens shoulder flexion range.',
+        videoId: '1vwWeqpknUc',
+        emoji: '🔼',
+      },
+      {
+        name: 'Kick-Up Practice (Wall)',
+        sets: '3 × 10 kick-ups',
+        cue: 'Practice the kick alone — lead with the hips, not the feet.',
+        videoId: 'eVjafa6NVI0',
+        emoji: '🦵',
+      },
+    ],
+  },
+  fall_side: {
+    title: 'Lateral Instability',
+    icon: '↔️',
+    explanation: 'Your hands aren\'t aligned with your shoulders or your wrists are collapsing to one side. Fix your hand placement and build lateral finger pressure.',
+    drills: [
+      {
+        name: 'Chest-to-Wall Handstand',
+        sets: '5 × 20 sec',
+        cue: 'Focus on pressing equally through all 10 fingers — especially the index fingers.',
+        videoId: 'lb3ZGnLZ474',
+        emoji: '🤸',
+      },
+      {
+        name: 'Extended Plank',
+        sets: '3 × 40 sec',
+        cue: 'Maintain perfectly square hips — lateral drift shows up here first.',
+        videoId: 'kAZkLII49fk',
+        emoji: '💪',
+      },
+      {
+        name: 'Hollow Body Hold',
+        sets: '3 × 30 sec',
+        cue: 'Keep legs glued together. Lateral drift starts at the hips.',
+        videoId: 'B252KhFvWaY',
+        emoji: '🔥',
+      },
+    ],
+  },
+  cant_kick: {
+    title: 'Insufficient Kick / Hip Flexor Limit',
+    icon: '🦵',
+    explanation: 'Your hip flexors or hamstrings are limiting how high you can send your hips. Build flexibility and explosive hip drive.',
+    drills: [
+      {
+        name: 'Pike Hold',
+        sets: '4 × 45 sec',
+        cue: 'Squeeze into the angle — this is the mobility you\'re missing.',
+        videoId: '1vwWeqpknUc',
+        emoji: '🔼',
+      },
+      {
+        name: 'Wall Walks',
+        sets: '3 × 6 reps',
+        cue: 'Every rep, try to get your chest slightly closer to the wall.',
+        videoId: 'sfPsRW0eypU',
+        emoji: '🧱',
+      },
+      {
+        name: 'Hollow Body Hold',
+        sets: '3 × 30 sec',
+        cue: 'Core strength supports the kick. Build it here first.',
+        videoId: 'B252KhFvWaY',
+        emoji: '🔥',
+      },
+    ],
+  },
+  cant_hold: {
+    title: 'Balance & Finger Control',
+    icon: '🎯',
+    explanation: 'You\'re getting inverted but losing balance immediately. This is a fingertip micro-adjustment problem — you need to train the balance reflex.',
+    drills: [
+      {
+        name: 'Chest-to-Wall Handstand',
+        sets: '6 × 30 sec',
+        cue: 'Practice moving weight forward onto fingertips, then back to heel of hand.',
+        videoId: 'lb3ZGnLZ474',
+        emoji: '🤸',
+      },
+      {
+        name: 'Back-to-Wall Handstand',
+        sets: '5 × 20 sec',
+        cue: 'Lightly touch wall with heels only. Try to come off the wall for 1 sec.',
+        videoId: 'r8WwpGQlq7U',
+        emoji: '🏋️',
+      },
+      {
+        name: 'Shoulder Taps (Wall)',
+        sets: '3 × 8 taps/side',
+        cue: 'Each tap forces a single-arm balance shift — the core of balance training.',
+        videoId: 'sfPsRW0eypU',
+        emoji: '👋',
+      },
+    ],
+  },
+};
+
+// Secondary modifier: Q2 strain → extra tip
+function getStrainTip(strainAnswers) {
+  if (!Array.isArray(strainAnswers) || strainAnswers.includes('none')) return null;
+  if (strainAnswers.includes('wrists'))    return '🤚 Wrist strain detected — always complete the Wrist Warm-up before training.';
+  if (strainAnswers.includes('lower_back')) return '🔧 Lower back strain = banana back. Prioritise hollow body holds every session.';
+  if (strainAnswers.includes('shoulders')) return '💡 Shoulder strain — stretch into pike hold for 60 sec before each drill set.';
+  if (strainAnswers.includes('core'))      return '🔥 Core fatigue — hollow body holds should be your daily non-negotiable.';
+  return null;
+}
+
+// Q4 hold time → beginner tip
+function getHoldTip(holdAnswer) {
+  if (holdAnswer === 'hold_0')  return '⏱ You\'re at the start — focus only on Wall Walks and Chest-to-Wall holds for the next 2 weeks before attempting kick-ups.';
+  if (holdAnswer === 'hold_5')  return '⏱ Aim to hit a solid 20-second wall hold before spending time on freestanding attempts.';
+  if (holdAnswer === 'hold_30') return '⏱ Strong wall hold — you\'re ready to focus on freestanding balance. Reduce wall work and increase free attempts.';
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CONTEXT – UserProgressContext + UserProgressProvider
 // ─────────────────────────────────────────────────────────────────────────────
 const STORAGE_KEY        = '@handstandai_v2';
@@ -2080,6 +2293,286 @@ const tm = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// WEAKNESS DIAGNOSIS MODAL
+// ─────────────────────────────────────────────────────────────────────────────
+function WeaknessDiagnosisModal({ visible, onClose }) {
+  const insets = useSafeAreaInsets();
+  // 'quiz' | 'result'
+  const [phase, setPhase] = useState('quiz');
+  const [step,  setStep]  = useState(0);
+  // answers[0] = single string | answers[1] = array | etc.
+  const [answers, setAnswers] = useState([null, [], null, null]);
+  const [result,  setResult]  = useState(null);
+  const [drillModal, setDrillModal] = useState(null); // drill object for video
+
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const fadeAnim  = useRef(new Animated.Value(1)).current;
+
+  // Reset when opened
+  useEffect(() => {
+    if (visible) {
+      setPhase('quiz');
+      setStep(0);
+      setAnswers([null, [], null, null]);
+      setResult(null);
+      setDrillModal(null);
+    }
+  }, [visible]);
+
+  const animateStep = (direction, cb) => {
+    Animated.sequence([
+      Animated.parallel([
+        Animated.timing(fadeAnim,  { toValue: 0, duration: 150, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: direction * -30, duration: 150, useNativeDriver: true }),
+      ]),
+    ]).start(() => {
+      slideAnim.setValue(direction * 30);
+      cb();
+      Animated.parallel([
+        Animated.timing(fadeAnim,  { toValue: 1, duration: 200, useNativeDriver: true }),
+        Animated.spring(slideAnim, { toValue: 0, tension: 80, friction: 12, useNativeDriver: true }),
+      ]).start();
+    });
+  };
+
+  const q = WEAKNESS_QUIZ[step];
+
+  const selectOption = (value) => {
+    const next = [...answers];
+    if (q.multi) {
+      const cur = Array.isArray(next[step]) ? next[step] : [];
+      if (value === 'none') {
+        next[step] = cur.includes('none') ? [] : ['none'];
+      } else {
+        const withoutNone = cur.filter(v => v !== 'none');
+        next[step] = withoutNone.includes(value)
+          ? withoutNone.filter(v => v !== value)
+          : [...withoutNone, value];
+      }
+      setAnswers(next);
+    } else {
+      next[step] = value;
+      setAnswers(next);
+    }
+  };
+
+  const hasAnswer = () => {
+    if (q.multi) return Array.isArray(answers[step]) && answers[step].length > 0;
+    return answers[step] !== null;
+  };
+
+  const handleNext = () => {
+    if (!hasAnswer()) return;
+    if (step < WEAKNESS_QUIZ.length - 1) {
+      animateStep(1, () => setStep(s => s + 1));
+    } else {
+      // Compute result
+      const weakness = answers[0] || 'cant_hold';
+      const diagnosis = WEAKNESS_MAP[weakness];
+      const strainTip = getStrainTip(answers[1]);
+      const holdTip   = getHoldTip(answers[3]);
+      setResult({ ...diagnosis, strainTip, holdTip });
+      animateStep(1, () => setPhase('result'));
+    }
+  };
+
+  const handleBack = () => {
+    if (step === 0) { onClose(); return; }
+    animateStep(-1, () => setStep(s => s - 1));
+  };
+
+  const handleRetake = () => {
+    animateStep(-1, () => {
+      setPhase('quiz');
+      setStep(0);
+      setAnswers([null, [], null, null]);
+      setResult(null);
+    });
+  };
+
+  if (!visible) return null;
+
+  const progressPct = ((step) / WEAKNESS_QUIZ.length) * 100;
+
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      {/* Drill video modal (nested) */}
+      {drillModal && (
+        <Modal visible animationType="slide" onRequestClose={() => setDrillModal(null)} statusBarTranslucent>
+          <TutorialModal visible exercise={drillModal} onClose={() => setDrillModal(null)} />
+        </Modal>
+      )}
+
+      <View style={{ flex: 1, backgroundColor: C.bg }}>
+        <LinearGradient colors={[C.bg, '#0D0D0F']} style={StyleSheet.absoluteFill} />
+
+        {/* Header */}
+        <View style={[wd.header, { paddingTop: insets.top + 8 }]}>
+          <TouchableOpacity onPress={phase === 'result' ? handleRetake : handleBack} style={wd.headerBtn} activeOpacity={0.7}>
+            <Ionicons name={phase === 'result' ? 'refresh-outline' : 'arrow-back'} size={18} color={C.text} />
+          </TouchableOpacity>
+          <View style={{ flex: 1, paddingHorizontal: S.sm }}>
+            <Text style={[T.label, { color: C.accent }]}>WEAKNESS DIAGNOSIS</Text>
+            <Text style={[T.h4, { fontSize: 13 }]}>
+              {phase === 'quiz' ? `Question ${step + 1} of ${WEAKNESS_QUIZ.length}` : 'Your Diagnosis'}
+            </Text>
+          </View>
+          <TouchableOpacity onPress={onClose} style={wd.headerBtn} activeOpacity={0.7}>
+            <Ionicons name="close" size={18} color={C.textMuted} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Progress bar (quiz only) */}
+        {phase === 'quiz' && (
+          <View style={wd.progressTrack}>
+            <Animated.View style={[wd.progressFill, { width: `${progressPct}%` }]} />
+          </View>
+        )}
+
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingHorizontal: S.md, paddingBottom: 40, paddingTop: S.lg }}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+
+            {/* ── QUIZ PHASE ── */}
+            {phase === 'quiz' && (
+              <>
+                <Text style={[T.h3, { marginBottom: S.md, lineHeight: 30 }]}>{q.question}</Text>
+                {q.multi && (
+                  <Text style={[T.cap, { color: C.accent, marginBottom: S.md }]}>SELECT ALL THAT APPLY</Text>
+                )}
+                {q.options.map(opt => {
+                  const selected = q.multi
+                    ? Array.isArray(answers[step]) && answers[step].includes(opt.value)
+                    : answers[step] === opt.value;
+                  return (
+                    <TouchableOpacity
+                      key={opt.value}
+                      style={[wd.optionRow, selected && wd.optionRowSelected]}
+                      onPress={() => selectOption(opt.value)}
+                      activeOpacity={0.8}
+                    >
+                      <View style={[wd.optionCheck, selected && wd.optionCheckSelected]}>
+                        {selected && <Ionicons name="checkmark" size={12} color={C.black} />}
+                      </View>
+                      <Text style={[wd.optionLabel, selected && { color: C.accent }]}>{opt.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+
+                <TouchableOpacity
+                  style={[wd.nextBtn, !hasAnswer() && { opacity: 0.35 }]}
+                  onPress={handleNext}
+                  activeOpacity={0.85}
+                  disabled={!hasAnswer()}
+                >
+                  <LinearGradient colors={G.accent} style={wd.nextGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                    <Text style={[T.h4, { color: C.black, fontWeight: '900' }]}>
+                      {step === WEAKNESS_QUIZ.length - 1 ? 'Get My Diagnosis' : 'Next'}
+                    </Text>
+                    <Ionicons name={step === WEAKNESS_QUIZ.length - 1 ? 'flash' : 'arrow-forward'} size={16} color={C.black} />
+                  </LinearGradient>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {/* ── RESULT PHASE ── */}
+            {phase === 'result' && result && (
+              <>
+                {/* Weakness banner */}
+                <View style={wd.weaknessBanner}>
+                  <LinearGradient colors={[C.accentDim, 'transparent']} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} />
+                  <Text style={{ fontSize: 36, marginBottom: S.sm }}>{result.icon}</Text>
+                  <Text style={[T.label, { color: C.accent, marginBottom: 4 }]}>YOUR #1 WEAKNESS</Text>
+                  <Text style={[T.h2, { textAlign: 'center', marginBottom: S.sm, lineHeight: 30 }]}>{result.title}</Text>
+                  <Text style={[T.body, { textAlign: 'center', color: C.textSub, lineHeight: 22, maxWidth: 300 }]}>
+                    {result.explanation}
+                  </Text>
+                </View>
+
+                {/* Extra tips from Q2/Q4 */}
+                {result.strainTip && (
+                  <View style={wd.tipCard}>
+                    <Text style={[T.small, { lineHeight: 18, color: C.text }]}>{result.strainTip}</Text>
+                  </View>
+                )}
+                {result.holdTip && (
+                  <View style={wd.tipCard}>
+                    <Text style={[T.small, { lineHeight: 18, color: C.text }]}>{result.holdTip}</Text>
+                  </View>
+                )}
+
+                {/* Drill list */}
+                <Text style={[T.label, { color: C.textMuted, marginTop: S.lg, marginBottom: S.sm }]}>YOUR 3 TARGETED DRILLS</Text>
+                {result.drills.map((drill, i) => (
+                  <View key={i} style={wd.drillCard}>
+                    <View style={wd.drillLeft}>
+                      <View style={wd.drillNum}><Text style={{ fontSize: 11, fontWeight: '900', color: C.black }}>{i + 1}</Text></View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[T.h4, { fontSize: 14 }]}>{drill.emoji}  {drill.name}</Text>
+                        <Text style={[T.cap, { color: C.accent, marginTop: 2 }]}>{drill.sets}</Text>
+                        <Text style={[T.small, { color: C.textSub, marginTop: 4, lineHeight: 18 }]}>{drill.cue}</Text>
+                      </View>
+                    </View>
+                    {drill.videoId && (
+                      <TouchableOpacity
+                        style={wd.drillYt}
+                        onPress={() => setDrillModal({ name: drill.name, emoji: drill.emoji, videoId: drill.videoId, instructions: drill.cue })}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="play-circle" size={28} color={C.accent} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ))}
+
+                {/* CTA */}
+                <TouchableOpacity style={[wd.nextBtn, { marginTop: S.lg }]} onPress={onClose} activeOpacity={0.85}>
+                  <LinearGradient colors={G.accent} style={wd.nextGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                    <Text style={[T.h4, { color: C.black, fontWeight: '900' }]}>Start Training These Drills</Text>
+                    <Ionicons name="barbell" size={16} color={C.black} />
+                  </LinearGradient>
+                </TouchableOpacity>
+                <TouchableOpacity style={{ alignItems: 'center', paddingVertical: S.md }} onPress={handleRetake} activeOpacity={0.7}>
+                  <Text style={[T.small, { color: C.textMuted }]}>Retake quiz</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+          </Animated.View>
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+}
+
+const wd = StyleSheet.create({
+  header:              { flexDirection: 'row', alignItems: 'center', paddingHorizontal: S.md, paddingBottom: S.sm },
+  headerBtn:           { width: 36, height: 36, borderRadius: R.full, backgroundColor: C.bgCard, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.border },
+  progressTrack:       { height: 3, backgroundColor: C.bgCard, marginHorizontal: S.md, marginBottom: S.sm, borderRadius: 2, overflow: 'hidden' },
+  progressFill:        { height: 3, backgroundColor: C.accent, borderRadius: 2 },
+  optionRow:           { flexDirection: 'row', alignItems: 'center', gap: S.md, backgroundColor: C.bgCard, borderRadius: R.xl, padding: S.md, marginBottom: S.sm, borderWidth: 1, borderColor: C.border },
+  optionRowSelected:   { borderColor: C.accent, backgroundColor: C.accentDim },
+  optionCheck:         { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
+  optionCheckSelected: { backgroundColor: C.accent, borderColor: C.accent },
+  optionLabel:         { flex: 1, fontSize: 14, fontWeight: '600', color: C.text, lineHeight: 20 },
+  nextBtn:             { borderRadius: R.xxl, overflow: 'hidden', marginTop: S.md },
+  nextGrad:            { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: S.sm, paddingVertical: S.md + 4 },
+  weaknessBanner:      { alignItems: 'center', backgroundColor: C.bgCard, borderRadius: R.xxl, padding: S.xl, marginBottom: S.md, borderWidth: 1, borderColor: C.accent + '33', overflow: 'hidden' },
+  tipCard:             { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: C.bgCard, borderRadius: R.lg, padding: S.md, marginBottom: S.sm, borderWidth: 1, borderColor: C.border },
+  drillCard:           { flexDirection: 'row', alignItems: 'center', backgroundColor: C.bgCard, borderRadius: R.xl, padding: S.md, marginBottom: S.sm, borderWidth: 1, borderColor: C.border, gap: S.sm },
+  drillLeft:           { flex: 1, flexDirection: 'row', alignItems: 'flex-start', gap: S.sm },
+  drillNum:            { width: 24, height: 24, borderRadius: 12, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center', marginTop: 2, flexShrink: 0 },
+  drillYt:             { paddingLeft: S.sm },
+  // HomeScreen entry card
+  weaknessEntryCard:   { flexDirection: 'row', alignItems: 'center', gap: S.md, backgroundColor: C.bgCard, borderRadius: R.xl, padding: S.md, borderWidth: 1, borderColor: C.accent + '55' },
+  weaknessEntryIcon:   { width: 44, height: 44, borderRadius: R.md, backgroundColor: C.accentDim, alignItems: 'center', justifyContent: 'center' },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SHARED: ExerciseCard (Movemate style with left accent bar)
 // ─────────────────────────────────────────────────────────────────────────────
 function ExerciseCard({ exercise, levelColor, index }) {
@@ -2436,7 +2929,8 @@ function HomeScreen({ navigation }) {
   const fadeAnim  = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
   const [dailyExpanded, setDailyExpanded] = useState(false);
-  const [showExPicker,  setShowExPicker]  = useState(false);
+  const [showExPicker,    setShowExPicker]    = useState(false);
+  const [showWeakness,    setShowWeakness]    = useState(false);
   const [pendingNav,    setPendingNav]    = useState(null);
   const [avatarUri,     setAvatarUri]     = useState(null);
 
@@ -2592,8 +3086,28 @@ function HomeScreen({ navigation }) {
           </Text>
         </Animated.View>
 
+        {/* ── Find Your Weakness card ── */}
+        <Animated.View style={[{ marginTop: 12, marginHorizontal: 20 }, { opacity: fadeAnim }]}>
+          <TouchableOpacity
+            style={wd.weaknessEntryCard}
+            onPress={() => setShowWeakness(true)}
+            activeOpacity={0.85}
+          >
+            <View style={wd.weaknessEntryIcon}>
+              <Text style={{ fontSize: 20 }}>🎯</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[T.h4, { fontSize: 14, color: C.accent }]}>Find Your Weakness</Text>
+              <Text style={[T.small, { color: C.textSub, marginTop: 2, lineHeight: 17 }]}>
+                60-second quiz → 3 drills picked just for you
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={C.accent} />
+          </TouchableOpacity>
+        </Animated.View>
+
         {/* ── 5. PRIMARY CTA ── */}
-        <Animated.View style={[{ marginTop: 24, marginHorizontal: 20 }, { opacity: fadeAnim }, { transform: [{ scale: btnScale }] }]}>
+        <Animated.View style={[{ marginTop: 12, marginHorizontal: 20 }, { opacity: fadeAnim }, { transform: [{ scale: btnScale }] }]}>
           <TouchableOpacity
             onPressIn={pressBtnIn}
             onPressOut={pressBtnOut}
@@ -2751,6 +3265,9 @@ function HomeScreen({ navigation }) {
           </ScrollView>
         </View>
       </Modal>
+
+      {/* ── Weakness Diagnosis Modal ── */}
+      <WeaknessDiagnosisModal visible={showWeakness} onClose={() => setShowWeakness(false)} />
     </View>
   );
 }
@@ -6501,33 +7018,40 @@ const wp = StyleSheet.create({
 
 function PreviewBanner() {
   const { isPreview, triggerGate } = useContext(PreviewContext);
-  const slideAnim = useRef(new Animated.Value(-40)).current;
+  const insets = useSafeAreaInsets();
+  // Slide-off value must be large enough to clear the banner height + top inset
+  const BANNER_HEIGHT = 44;
+  const slideOff = -(BANNER_HEIGHT + insets.top + 8);
+  const slideAnim = useRef(new Animated.Value(slideOff)).current;
 
   useEffect(() => {
     Animated.spring(slideAnim, {
-      toValue: isPreview ? 0 : -40,
+      toValue: isPreview ? 0 : slideOff,
       tension: 80, friction: 12, useNativeDriver: true,
     }).start();
-  }, [isPreview]);
+  }, [isPreview, slideOff]);
 
   if (!isPreview) return null;
   return (
-    <Animated.View style={[pv.banner, { transform: [{ translateY: slideAnim }] }]}>
-      <View style={pv.bannerDot} />
-      <Text style={pv.bannerText}>Preview mode — Sign up to save your progress</Text>
-      <TouchableOpacity onPress={triggerGate} activeOpacity={0.8} style={pv.bannerBtn}>
-        <Text style={pv.bannerBtnText}>Sign up</Text>
-      </TouchableOpacity>
+    <Animated.View style={[pv.bannerWrap, { paddingTop: insets.top, transform: [{ translateY: slideAnim }] }]}>
+      <View style={pv.bannerRow}>
+        <View style={pv.bannerDot} />
+        <Text style={pv.bannerText}>Preview mode — Sign up to save your progress</Text>
+        <TouchableOpacity onPress={triggerGate} activeOpacity={0.8} style={pv.bannerBtn}>
+          <Text style={pv.bannerBtnText}>Sign up</Text>
+        </TouchableOpacity>
+      </View>
     </Animated.View>
   );
 }
 
 
 const pv = StyleSheet.create({
-  banner:      { flexDirection: 'row', alignItems: 'center', backgroundColor: C.bgCard, borderBottomWidth: 1, borderBottomColor: C.accent + '40', paddingHorizontal: S.md, paddingVertical: 10, gap: S.sm },
-  bannerDot:   { width: 7, height: 7, borderRadius: 4, backgroundColor: C.accent },
-  bannerText:  { flex: 1, fontSize: 12, color: C.textSub, fontWeight: '500' },
-  bannerBtn:   { backgroundColor: C.accent, borderRadius: R.full, paddingHorizontal: S.sm, paddingVertical: 4 },
+  bannerWrap:    { backgroundColor: C.bgCard, borderBottomWidth: 1, borderBottomColor: C.accent + '40' },
+  bannerRow:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: S.md, paddingVertical: 10, gap: S.sm },
+  bannerDot:     { width: 7, height: 7, borderRadius: 4, backgroundColor: C.accent },
+  bannerText:    { flex: 1, fontSize: 12, color: C.textSub, fontWeight: '500' },
+  bannerBtn:     { backgroundColor: C.accent, borderRadius: R.full, paddingHorizontal: S.sm, paddingVertical: 4 },
   bannerBtnText: { fontSize: 11, fontWeight: '900', color: C.black },
 });
 
