@@ -43,6 +43,7 @@ import * as Notifications from 'expo-notifications';
 import * as ImagePicker from 'expo-image-picker';
 import NetInfo from '@react-native-community/netinfo';
 import { createClient } from '@supabase/supabase-js';
+import Voice from '@react-native-voice/voice';
 
 const { width, height } = Dimensions.get('window');
 
@@ -320,8 +321,76 @@ const FREE_MAX_LEVEL = 2;   // levels 1-2 free, 3+ require Pro
 // ─────────────────────────────────────────────────────────────────────────────
 // RETENTION — MILESTONES & FORGIVING STREAKS
 // ─────────────────────────────────────────────────────────────────────────────
-const MILESTONES_KEY = '@handstandai_milestones';
+const MILESTONES_KEY     = '@handstandai_milestones';
 const WEEKLY_SUMMARY_KEY = '@handstandai_weekly_summary';
+const VOICE_TIMER_KEY    = '@handstandai_voice_timer';
+const BADGE_STORAGE_KEY  = '@handstandai_badges';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BADGES — definitions
+// ─────────────────────────────────────────────────────────────────────────────
+const BADGES = [
+  // Streak
+  { id: 'streak_3',    category: 'streak',   icon: '🔥',  title: 'First Flame',         description: 'Reach a 3-day training streak.',           xpReward: 50  },
+  { id: 'streak_7',    category: 'streak',   icon: '🔥',  title: 'Week Warrior',         description: 'Reach a 7-day training streak.',           xpReward: 100 },
+  { id: 'streak_30',   category: 'streak',   icon: '🔥',  title: 'Monthly Machine',      description: 'Reach a 30-day training streak.',          xpReward: 300 },
+  { id: 'streak_60',   category: 'streak',   icon: '💎',  title: 'Iron Will',            description: 'Reach a 60-day training streak.',          xpReward: 500 },
+  { id: 'streak_100',  category: 'streak',   icon: '👑',  title: 'Legend',               description: 'Reach a 100-day training streak.',         xpReward: 1000},
+  { id: 'streak_365',  category: 'streak',   icon: '⭐',  title: 'Unstoppable',          description: 'Reach a 365-day training streak.',         xpReward: 5000},
+  // Hold time
+  { id: 'hold_1',      category: 'hold',     icon: '⏱',  title: 'First Contact',        description: 'Hold a handstand for 1 second.',           xpReward: 25  },
+  { id: 'hold_5',      category: 'hold',     icon: '⏱',  title: '5 Seconds of Flight',  description: 'Hold a handstand for 5 seconds.',          xpReward: 50  },
+  { id: 'hold_10',     category: 'hold',     icon: '⏱',  title: '10 and Counting',      description: 'Hold a handstand for 10 seconds.',         xpReward: 100 },
+  { id: 'hold_30',     category: 'hold',     icon: '⏱',  title: 'Half Minute Hero',     description: 'Hold a handstand for 30 seconds.',         xpReward: 250 },
+  { id: 'hold_60',     category: 'hold',     icon: '⏱',  title: 'One Minute Master',    description: 'Hold a handstand for 60 seconds.',         xpReward: 500 },
+  // Level
+  { id: 'level_1',     category: 'level',    icon: '🌱',  title: 'Getting Started',      description: 'Complete Level 1.',                        xpReward: 100 },
+  { id: 'level_2',     category: 'level',    icon: '🔥',  title: 'Moving Up',            description: 'Complete Level 2.',                        xpReward: 200 },
+  { id: 'level_3',     category: 'level',    icon: '💪',  title: 'Intermediate',         description: 'Complete Level 3.',                        xpReward: 300 },
+  { id: 'level_4',     category: 'level',    icon: '⚡',  title: 'Advanced',             description: 'Complete Level 4.',                        xpReward: 500 },
+  { id: 'level_5',     category: 'level',    icon: '🏆',  title: 'Elite',                description: 'Complete Level 5.',                        xpReward: 1000},
+  // Practice sessions
+  { id: 'sessions_1',  category: 'practice', icon: '🎯',  title: 'First Session',        description: 'Complete your first training session.',    xpReward: 25  },
+  { id: 'sessions_25', category: 'practice', icon: '🎯',  title: 'Dedicated',            description: 'Complete 25 training sessions.',           xpReward: 150 },
+  { id: 'sessions_50', category: 'practice', icon: '🎯',  title: 'Committed',            description: 'Complete 50 training sessions.',           xpReward: 300 },
+  { id: 'sessions_100',category: 'practice', icon: '🎯',  title: 'Obsessed',             description: 'Complete 100 training sessions.',          xpReward: 750 },
+  { id: 'sessions_500',category: 'practice', icon: '🎯',  title: 'Master Practitioner',  description: 'Complete 500 training sessions.',          xpReward: 2500},
+  // Programs
+  { id: 'program_1',   category: 'program',  icon: '📋',  title: 'Program Complete',     description: 'Finish any weekly training program.',      xpReward: 500 },
+  { id: 'program_2',   category: 'program',  icon: '📋',  title: 'Double Down',          description: 'Finish 2 training programs.',              xpReward: 750 },
+  { id: 'program_3',   category: 'program',  icon: '📋',  title: 'Triple Threat',        description: 'Finish 3 training programs.',              xpReward: 1000},
+  // Special
+  { id: 'diagnosis',   category: 'special',  icon: '🎯',  title: 'Know Yourself',        description: 'Complete the Weakness Diagnosis quiz.',    xpReward: 75  },
+  { id: 'day_one',     category: 'special',  icon: '🌟',  title: 'Day One',              description: 'Complete the onboarding quiz.',            xpReward: 50  },
+];
+
+// Standalone (no hook) streak computer used by _load() and StreakDetailModal.
+// Returns { streak, frozen, freezeGapDate } where freezeGapDate is the
+// DateString of the skipped day that consumed the freeze.
+function computeStreakFromSubs(submissions) {
+  if (!submissions || submissions.length === 0) return { streak: 0, frozen: false, freezeGapDate: null };
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const trainingDates = new Set(submissions.map(s => {
+    const d = new Date(s.date); d.setHours(0, 0, 0, 0); return d.getTime();
+  }));
+  const trainedToday = trainingDates.has(today.getTime());
+  let consecutiveDays = 0;
+  let restDayUsed = false;
+  let freezeGapDate = null;
+  for (let i = 0; i < 90; i++) {
+    const d = new Date(today); d.setDate(d.getDate() - i);
+    if (trainingDates.has(d.getTime())) {
+      consecutiveDays++;
+    } else if (!restDayUsed && i > 0) {
+      restDayUsed = true;
+      freezeGapDate = d.toDateString();
+    } else {
+      break;
+    }
+  }
+  const frozen = restDayUsed && !trainedToday;
+  return { streak: consecutiveDays, frozen, freezeGapDate };
+}
 
 const MILESTONE_DEFS = [
   { id: 'first_submission',  label: 'First Training Session',   emoji: '🎉', condition: (p) => p.submissions?.length >= 1 },
@@ -429,31 +498,8 @@ function MilestoneProvider({ children }) {
 
   // Forgiving streak: allow 1 rest day per week without breaking
   const computeForgivingStreak = useCallback((progress) => {
-    const subs = progress.submissions || [];
-    if (subs.length === 0) return { streak: 0, frozen: false };
-    const today = new Date(); today.setHours(0,0,0,0);
-    const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
-    const trainingDates = new Set(subs.map(s => {
-      const d = new Date(s.date); d.setHours(0,0,0,0); return d.getTime();
-    }));
-    // Check if today or yesterday has a session
-    const trainedToday     = trainingDates.has(today.getTime());
-    const trainedYesterday = trainingDates.has(yesterday.getTime());
-    // Check if last 7 days has at most 1 gap (forgiving rest day)
-    let consecutiveDays = 0;
-    let restDayUsed = false;
-    for (let i = 0; i < 30; i++) {
-      const d = new Date(today); d.setDate(d.getDate() - i);
-      if (trainingDates.has(d.getTime())) {
-        consecutiveDays++;
-      } else if (!restDayUsed && i > 0) {
-        restDayUsed = true; // forgive one gap
-      } else {
-        break;
-      }
-    }
-    const frozen = restDayUsed && !trainedToday && trainedYesterday;
-    return { streak: consecutiveDays, frozen };
+    const { streak, frozen } = computeStreakFromSubs(progress.submissions || []);
+    return { streak, frozen };
   }, []);
 
   return (
@@ -1540,11 +1586,12 @@ async function processAIQueue(onResult) {
 }
 
 const DEFAULT_NOTIF_SETTINGS = {
-  enabled:        false,
-  reminderHour:   8,
-  reminderMinute: 0,
-  streakEnabled:  true,
-  weeklyEnabled:  true,
+  enabled:           false,
+  reminderHour:      18,   // default 6 PM
+  reminderMinute:    0,
+  streakEnabled:     true,
+  weeklyEnabled:     true,
+  milestoneEnabled:  true, // milestone celebrations
 };
 
 // Show alerts even when app is foregrounded
@@ -1588,18 +1635,34 @@ async function requestNotifPermission() {
   } catch (_) { return 'denied'; }
 }
 
-async function scheduleAllNotifications(settings, streak = 0) {
+// Immediate notification fired when user hits a streak milestone
+async function scheduleMilestoneStreakNotif(streak) {
+  try {
+    const STREAK_XP = { 7: 100, 14: 200, 30: 500, 60: 1000, 100: 2000 };
+    const xp = STREAK_XP[streak] || 100;
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: `🎉 ${streak}-Day Streak!`,
+        body: `You're absolutely on fire. +${xp} XP awarded. Keep it going!`,
+        sound: true,
+      },
+      trigger: null, // immediate
+    });
+  } catch (_) {}
+}
+
+async function scheduleAllNotifications(settings, streak = 0, freezeAvailable = 1) {
   try {
     await Notifications.cancelAllScheduledNotificationsAsync();
     if (!settings.enabled) return;
     const { reminderHour: h, reminderMinute: m } = settings;
 
-    // 1. Daily training reminder
+    // 1. Daily training reminder at configured time (default 6 PM)
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: '🤸 Time to Train!',
+        title: streak > 0 ? `Don't break your streak!` : '🤸 Time to Train!',
         body: streak > 2
-          ? `You're on a ${streak}-day streak! Keep it alive with today's session.`
+          ? `Just 5 minutes keeps your ${streak}-day streak alive 🔥`
           : "Your daily handstand practice is waiting. Let's build that skill!",
         sound: true,
       },
@@ -1609,25 +1672,41 @@ async function scheduleAllNotifications(settings, streak = 0) {
       },
     });
 
-    // 2. Evening streak reminder — 12 hours later, capped at 20:00
+    // 2. 8 PM "last chance" warning (only when no freezes available)
     if (settings.streakEnabled) {
-      const sh = Math.min(h + 12, 20);
+      const warningHour = Math.max(h + 1, 20); // 1h after reminder, min 8pm
       await Notifications.scheduleNotificationAsync({
         content: {
-          title: "🔥 Don't Break Your Streak!",
-          body: streak > 1
-            ? `Day ${streak} on the line! Log just one exercise to keep it going.`
-            : 'Open HandstandHub and complete today\'s training to stay consistent.',
+          title: freezeAvailable > 0 ? '🔥 Streak reminder' : '⚠️ Last chance!',
+          body: freezeAvailable > 0
+            ? `Day ${streak} streak — train now to keep it going.`
+            : `You're out of freeze days. Train now or your streak resets at midnight.`,
           sound: true,
         },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.DAILY,
-          hour: sh, minute: m,
+          hour: Math.min(warningHour, 22), minute: 0,
         },
       });
     }
 
-    // 3. Weekly progress summary — Sunday at 09:00
+    // 3. Freeze restored — Sunday 9 AM
+    if (settings.streakEnabled) {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: 'Freeze day restored ❄️',
+          body: 'You have 1 freeze day available this week.',
+          sound: true,
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+          weekday: 1, // Sunday
+          hour: 9, minute: 0,
+        },
+      });
+    }
+
+    // 4. Weekly progress summary — Sunday at 09:30
     if (settings.weeklyEnabled) {
       await Notifications.scheduleNotificationAsync({
         content: {
@@ -1637,8 +1716,8 @@ async function scheduleAllNotifications(settings, streak = 0) {
         },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
-          weekday: 1, // 1 = Sunday in expo-notifications
-          hour: 9, minute: 0,
+          weekday: 1,
+          hour: 9, minute: 30,
         },
       });
     }
@@ -1658,19 +1737,208 @@ async function cancelStreakReminderToday() {
 }
 
 const DEFAULT_PROGRESS = {
-  currentLevel:            1,
-  xp:                      0,
-  totalXP:                 0,
-  completedLevels:         [],
-  submissions:             [],
-  streak:                  0,
-  lastActiveDate:          null,
-  dailyChallengeCompleted: false,
-  dailyChallengeDate:      null,
-  joinDate:                new Date().toISOString(),
-  userName:                '',
-  startHereDismissed:      false,  // shown until user taps "Go to Level 1" or X
+  currentLevel:              1,
+  xp:                        0,
+  totalXP:                   0,
+  completedLevels:           [],
+  submissions:               [],
+  streak:                    0,
+  longestStreak:             0,
+  lastActiveDate:            null,
+  dailyChallengeCompleted:   false,
+  dailyChallengeDate:        null,
+  joinDate:                  new Date().toISOString(),
+  userName:                  '',
+  startHereDismissed:        false,
+  freezeDaysAvailable:       1,
+  lastFreezeReset:           null,
+  freezeUsedDates:           [],  // DateString[] of days freeze was auto-consumed
+  notifiedStreakMilestones:  [],  // streak numbers we already celebrated
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BADGE CONTEXT + PROVIDER
+// ─────────────────────────────────────────────────────────────────────────────
+const BadgeContext = React.createContext({ earned: [], checkBadges: () => {}, newBadge: null });
+
+async function _loadEarnedBadges() {
+  try {
+    const raw = await AsyncStorage.getItem(BADGE_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (_) { return []; }
+}
+
+async function _saveEarnedBadges(list) {
+  try { await AsyncStorage.setItem(BADGE_STORAGE_KEY, JSON.stringify(list)); } catch (_) {}
+}
+
+function BadgeProvider({ children }) {
+  const [earned,   setEarned]   = useState([]);  // array of badge ids
+  const [newBadge, setNewBadge] = useState(null); // badge def currently toasting
+  const queueRef = useRef([]);    // badges waiting to toast
+  const toasting = useRef(false);
+
+  useEffect(() => {
+    _loadEarnedBadges().then(ids => setEarned(ids));
+  }, []);
+
+  // Show queued badges one at a time, 3 s apart
+  const drainQueue = useCallback(() => {
+    if (toasting.current || queueRef.current.length === 0) return;
+    toasting.current = true;
+    const next = queueRef.current.shift();
+    setNewBadge(next);
+    setTimeout(() => {
+      setNewBadge(null);
+      toasting.current = false;
+      // small gap then next
+      setTimeout(drainQueue, 400);
+    }, 3200);
+  }, []);
+
+  // checkBadges({ progress, voiceHistory, programsCompleted, diagnosisDone })
+  const checkBadges = useCallback(async ({
+    progress = {},
+    voiceHistory = null,
+    programsCompleted = null,
+    diagnosisDone = false,
+  }) => {
+    const currentIds = await _loadEarnedBadges();
+    const currentSet = new Set(currentIds);
+    const nowEarned  = [];
+
+    const streak       = progress.streak ?? 0;
+    const sessions     = progress.submissions?.length ?? 0;
+    const completedLvl = progress.completedLevels ?? [];
+
+    // Helper: check single badge
+    const tryEarn = (id) => {
+      if (!currentSet.has(id)) {
+        const def = BADGES.find(b => b.id === id);
+        if (def) { currentSet.add(id); nowEarned.push(def); }
+      }
+    };
+
+    // Streak badges
+    if (streak >= 3)   tryEarn('streak_3');
+    if (streak >= 7)   tryEarn('streak_7');
+    if (streak >= 30)  tryEarn('streak_30');
+    if (streak >= 60)  tryEarn('streak_60');
+    if (streak >= 100) tryEarn('streak_100');
+    if (streak >= 365) tryEarn('streak_365');
+
+    // Session badges
+    if (sessions >= 1)   tryEarn('sessions_1');
+    if (sessions >= 25)  tryEarn('sessions_25');
+    if (sessions >= 50)  tryEarn('sessions_50');
+    if (sessions >= 100) tryEarn('sessions_100');
+    if (sessions >= 500) tryEarn('sessions_500');
+
+    // Level badges
+    if (completedLvl.includes(1)) tryEarn('level_1');
+    if (completedLvl.includes(2)) tryEarn('level_2');
+    if (completedLvl.includes(3)) tryEarn('level_3');
+    if (completedLvl.includes(4)) tryEarn('level_4');
+    if (completedLvl.includes(5)) tryEarn('level_5');
+
+    // Hold time badges (from voice timer history or provided best)
+    if (voiceHistory !== null) {
+      const best = voiceHistory.length ? Math.max(...voiceHistory.map(h => h.duration)) : 0;
+      if (best >= 1)  tryEarn('hold_1');
+      if (best >= 5)  tryEarn('hold_5');
+      if (best >= 10) tryEarn('hold_10');
+      if (best >= 30) tryEarn('hold_30');
+      if (best >= 60) tryEarn('hold_60');
+    }
+
+    // Program badges
+    if (programsCompleted !== null) {
+      if (programsCompleted >= 1) tryEarn('program_1');
+      if (programsCompleted >= 2) tryEarn('program_2');
+      if (programsCompleted >= 3) tryEarn('program_3');
+    }
+
+    // Special
+    if (diagnosisDone) tryEarn('diagnosis');
+
+    // Day One — onboarding done = user has userName
+    if (progress.userName) tryEarn('day_one');
+
+    if (nowEarned.length > 0) {
+      const newIds = [...currentSet];
+      await _saveEarnedBadges(newIds);
+      setEarned(newIds);
+      // Queue toasts
+      queueRef.current.push(...nowEarned);
+      drainQueue();
+    }
+  }, [drainQueue]);
+
+  return (
+    <BadgeContext.Provider value={{ earned, checkBadges, newBadge }}>
+      {children}
+      <BadgeToast badge={newBadge} />
+    </BadgeContext.Provider>
+  );
+}
+
+function BadgeToast({ badge }) {
+  const insets   = useSafeAreaInsets();
+  const slideAnim = useRef(new Animated.Value(-120)).current;
+  const scaleAnim = useRef(new Animated.Value(0.8)).current;
+
+  useEffect(() => {
+    if (badge) {
+      Animated.parallel([
+        Animated.spring(slideAnim, { toValue: 0,   tension: 70, friction: 11, useNativeDriver: true }),
+        Animated.spring(scaleAnim, { toValue: 1,   tension: 70, friction: 11, useNativeDriver: true }),
+      ]).start();
+      Vibration.vibrate([0, 30, 50, 30]);
+    } else {
+      Animated.parallel([
+        Animated.timing(slideAnim, { toValue: -120, duration: 280, useNativeDriver: true }),
+        Animated.timing(scaleAnim, { toValue: 0.8,  duration: 280, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [badge]);
+
+  if (!badge) return null;
+
+  return (
+    <Animated.View
+      style={[
+        bst.wrap,
+        { top: insets.top + 10, transform: [{ translateY: slideAnim }, { scale: scaleAnim }] },
+      ]}
+      pointerEvents="none"
+    >
+      <LinearGradient colors={['#1C1D21', '#16171A']} style={bst.card} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+        <View style={bst.iconWrap}>
+          <Text style={{ fontSize: 28 }}>{badge.icon}</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={bst.label}>BADGE UNLOCKED</Text>
+          <Text style={bst.title}>{badge.title}</Text>
+          <Text style={bst.desc} numberOfLines={1}>{badge.description}</Text>
+        </View>
+        <View style={bst.xpPill}>
+          <Text style={bst.xpText}>+{badge.xpReward} XP</Text>
+        </View>
+      </LinearGradient>
+    </Animated.View>
+  );
+}
+
+const bst = StyleSheet.create({
+  wrap:     { position: 'absolute', left: 16, right: 16, zIndex: 9999, elevation: 99, shadowColor: C.accent, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 16 },
+  card:     { flexDirection: 'row', alignItems: 'center', gap: S.sm, padding: S.md, borderRadius: R.xl, borderWidth: 1, borderColor: C.accent + '55' },
+  iconWrap: { width: 52, height: 52, borderRadius: R.lg, backgroundColor: C.accentDim, alignItems: 'center', justifyContent: 'center' },
+  label:    { fontSize: 9, fontWeight: '800', letterSpacing: 1.5, color: C.accent, marginBottom: 1 },
+  title:    { fontSize: 14, fontWeight: '900', color: C.text },
+  desc:     { fontSize: 11, color: C.textSub, marginTop: 1 },
+  xpPill:   { backgroundColor: C.accentDim, borderRadius: R.full, paddingHorizontal: S.sm, paddingVertical: 4, borderWidth: 1, borderColor: C.accent + '44' },
+  xpText:   { fontSize: 11, fontWeight: '900', color: C.accent },
+});
 
 const UserProgressContext = React.createContext(null);
 
@@ -1839,15 +2107,46 @@ function UserProgressProvider({ children, onReset }) {
           p.dailyChallengeCompleted = false;
           p.dailyChallengeDate      = null;
         }
-        if (p.lastActiveDate !== today) {
-          p.streak = p.lastActiveDate === yesterday
-            ? (p.streak || 0) + 1
-            : 1;
-          p.lastActiveDate = today;
-        }
       } else {
-        p = { ...DEFAULT_PROGRESS, streak: 1, lastActiveDate: today };
+        p = { ...DEFAULT_PROGRESS, lastActiveDate: today };
       }
+
+      // ── Freeze day: reset on new week (Sunday-based) ────────────────────────
+      const todayDate = new Date(); todayDate.setHours(0, 0, 0, 0);
+      const thisSunday = new Date(todayDate);
+      thisSunday.setDate(todayDate.getDate() - todayDate.getDay());
+      const lastReset = p.lastFreezeReset ? new Date(p.lastFreezeReset) : null;
+      if (!lastReset || lastReset < thisSunday) {
+        p.freezeDaysAvailable = 1;
+        p.lastFreezeReset     = thisSunday.toISOString();
+        p.freezeUsedDates     = p.freezeUsedDates ?? [];
+      }
+
+      // ── Compute training streak from submissions ─────────────────────────────
+      const subStreak = computeStreakFromSubs(p.submissions || []);
+
+      // ── Auto-apply freeze if eligible ────────────────────────────────────────
+      if (subStreak.frozen && subStreak.freezeGapDate) {
+        const alreadyUsed = (p.freezeUsedDates || []).includes(subStreak.freezeGapDate);
+        if (!alreadyUsed && (p.freezeDaysAvailable || 0) > 0) {
+          p.freezeUsedDates     = [...(p.freezeUsedDates || []), subStreak.freezeGapDate];
+          p.freezeDaysAvailable = Math.max(0, p.freezeDaysAvailable - 1);
+          // Immediate notification: streak saved by freeze
+          Notifications.scheduleNotificationAsync({
+            content: {
+              title: '❄️ Freeze day used!',
+              body: `Your ${subStreak.streak}-day streak is protected. Train today to keep it!`,
+              sound: true,
+            },
+            trigger: null,
+          }).catch(() => {});
+        }
+      }
+
+      // ── Update streak counter + longest streak ───────────────────────────────
+      p.streak        = subStreak.streak;
+      p.longestStreak = Math.max(p.streak, p.longestStreak || 0);
+      p.lastActiveDate = today;
 
       // ── Cloud sync: merge then check for first-time migration ──
       const userId = await _getAuthUserId();
@@ -2012,13 +2311,13 @@ function UserProgressProvider({ children, onReset }) {
       const status = await requestNotifPermission();
       setNotifPermission(status);
       if (status === 'granted') {
-        await scheduleAllNotifications(next, progress.streak);
+        await scheduleAllNotifications(next, progress.streak, progress.freezeDaysAvailable ?? 1);
       }
     } else {
       try { await Notifications.cancelAllScheduledNotificationsAsync(); } catch (_) {}
     }
     return next;
-  }, [notifSettings, progress.streak]);
+  }, [notifSettings, progress.streak, progress.freezeDaysAvailable]);
 
   const enableNotifications = useCallback(async () => {
     const status = await requestNotifPermission();
@@ -2027,19 +2326,54 @@ function UserProgressProvider({ children, onReset }) {
       const next = { ...notifSettings, enabled: true };
       setNotifSettings(next);
       await _saveNotifSettings(next);
-      await scheduleAllNotifications(next, progress.streak);
+      await scheduleAllNotifications(next, progress.streak, progress.freezeDaysAvailable ?? 1);
     }
     return status;
-  }, [notifSettings, progress.streak]);
+  }, [notifSettings, progress.streak, progress.freezeDaysAvailable]);
 
-  // ── Milestone checking after every progress update ──────────────────────────
-  // MilestoneContext may not be available if provider order changes, so we
-  // safely access it and skip if not mounted yet.
-  const milestoneCtx = useContext(MilestoneContext);
+  // ── Streak milestone celebrations + XP ──────────────────────────────────────
+  const STREAK_MILESTONES = [7, 14, 30, 60, 100];
+  const STREAK_MILESTONE_XP = { 7: 100, 14: 200, 30: 500, 60: 1000, 100: 2000 };
+
+  const [streakCelebration, setStreakCelebration] = useState(null); // { streak, xp }
 
   useEffect(() => {
-    if (!loading && milestoneCtx?.checkMilestones) {
-      milestoneCtx.checkMilestones(progress);
+    if (loading) return;
+    const { streak: currentStreak } = computeStreakFromSubs(progress.submissions || []);
+    for (const ms of STREAK_MILESTONES) {
+      if (currentStreak >= ms && !(progress.notifiedStreakMilestones || []).includes(ms)) {
+        const xpAward = STREAK_MILESTONE_XP[ms] || 100;
+        // Mark notified + award XP
+        setProgress(prev => {
+          const next = {
+            ...prev,
+            notifiedStreakMilestones: [...(prev.notifiedStreakMilestones || []), ms],
+            totalXP: prev.totalXP + xpAward,
+          };
+          _save(next);
+          return next;
+        });
+        setStreakCelebration({ streak: ms, xp: xpAward });
+        // Fire push notification if enabled
+        if (notifSettings.enabled && notifSettings.milestoneEnabled) {
+          scheduleMilestoneStreakNotif(ms);
+        }
+        break; // show one milestone at a time; next will show next open
+      }
+    }
+  }, [progress.streak, loading]);
+
+  // ── Milestone + Badge checking after every progress update ─────────────────
+  const milestoneCtx = useContext(MilestoneContext);
+  const badgeCtx     = useContext(BadgeContext);
+
+  useEffect(() => {
+    if (loading) return;
+    if (milestoneCtx?.checkMilestones) milestoneCtx.checkMilestones(progress);
+    if (badgeCtx?.checkBadges) {
+      loadVoiceHistory().then(vh => {
+        badgeCtx.checkBadges({ progress, voiceHistory: vh });
+      });
     }
   }, [progress.submissions?.length, progress.completedLevels?.length, progress.streak]);
 
@@ -2070,6 +2404,8 @@ function UserProgressProvider({ children, onReset }) {
       notifSettings, notifPermission,
       saveNotifSettings, enableNotifications,
       syncStatus,
+      streakCelebration,
+      dismissStreakCelebration: () => setStreakCelebration(null),
       onReset: onReset || null,
     }}>
       {children}
@@ -2297,6 +2633,8 @@ const tm = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 function WeaknessDiagnosisModal({ visible, onClose }) {
   const insets = useSafeAreaInsets();
+  const badgeCtx = useContext(BadgeContext);
+  const { progress } = useContext(UserProgressContext);
   // 'quiz' | 'result'
   const [phase, setPhase] = useState('quiz');
   const [step,  setStep]  = useState(0);
@@ -2372,6 +2710,7 @@ function WeaknessDiagnosisModal({ visible, onClose }) {
       const strainTip = getStrainTip(answers[1]);
       const holdTip   = getHoldTip(answers[3]);
       setResult({ ...diagnosis, strainTip, holdTip });
+      badgeCtx?.checkBadges({ progress, diagnosisDone: true });
       animateStep(1, () => setPhase('result'));
     }
   };
@@ -2570,6 +2909,398 @@ const wd = StyleSheet.create({
   // HomeScreen entry card
   weaknessEntryCard:   { flexDirection: 'row', alignItems: 'center', gap: S.md, backgroundColor: C.bgCard, borderRadius: R.xl, padding: S.md, borderWidth: 1, borderColor: C.accent + '55' },
   weaknessEntryIcon:   { width: 44, height: 44, borderRadius: R.md, backgroundColor: C.accentDim, alignItems: 'center', justifyContent: 'center' },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VOICE TIMER SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
+const START_WORDS = ['start', 'go', 'begin'];
+const STOP_WORDS  = ['stop', 'down', 'end'];
+
+function matchesWord(transcript, words) {
+  const t = transcript.toLowerCase();
+  return words.some(w => t.includes(w));
+}
+
+async function loadVoiceHistory() {
+  try {
+    const raw = await AsyncStorage.getItem(VOICE_TIMER_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (_) { return []; }
+}
+
+async function saveVoiceAttempt(seconds) {
+  try {
+    const history = await loadVoiceHistory();
+    const next = [{ date: new Date().toISOString(), duration: seconds }, ...history].slice(0, 100);
+    await AsyncStorage.setItem(VOICE_TIMER_KEY, JSON.stringify(next));
+    return next;
+  } catch (_) { return []; }
+}
+
+function todaysBest(history) {
+  const today = new Date().toDateString();
+  const todays = history.filter(h => new Date(h.date).toDateString() === today);
+  return todays.length ? Math.max(...todays.map(h => h.duration)) : 0;
+}
+
+function fmtTime(seconds) {
+  const m = String(Math.floor(seconds / 60)).padStart(2, '0');
+  const s = String(seconds % 60).padStart(2, '0');
+  return `${m}:${s}`;
+}
+
+// iOS limits a single speech session to ~60 sec. We restart every 50 sec.
+const SESSION_RESTART_MS = 50000;
+
+function VoiceTimerScreen({ visible, onClose }) {
+  const insets    = useSafeAreaInsets();
+  const badgeCtx  = useContext(BadgeContext);
+  const { progress } = useContext(UserProgressContext);
+
+  // 'idle' | 'holding' | 'error' | 'manual'
+  const [mode,        setMode]        = useState('idle');
+  const [seconds,     setSeconds]     = useState(0);
+  const [history,     setHistory]     = useState([]);
+  const [lastHold,    setLastHold]    = useState(0);
+  const [status,      setStatus]      = useState("Say 'START' to begin");
+  const [permDenied,  setPermDenied]  = useState(false);
+  const [voiceError,  setVoiceError]  = useState(false);
+  const [listening,   setListening]   = useState(false);
+
+  const tickRef       = useRef(null);
+  const restartRef    = useRef(null);
+  const secondsRef    = useRef(0);
+  const modeRef       = useRef('idle');
+  const mountedRef    = useRef(false);
+
+  // Animated pulse for mic icon
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const pulseLoop = useRef(null);
+  // Tint when holding
+  const tintAnim  = useRef(new Animated.Value(0)).current;
+
+  const startPulse = () => {
+    pulseLoop.current = Animated.loop(Animated.sequence([
+      Animated.timing(pulseAnim, { toValue: 1.35, duration: 600, useNativeDriver: true }),
+      Animated.timing(pulseAnim, { toValue: 1,    duration: 600, useNativeDriver: true }),
+    ]));
+    pulseLoop.current.start();
+  };
+  const stopPulse = () => {
+    pulseLoop.current?.stop();
+    Animated.spring(pulseAnim, { toValue: 1, useNativeDriver: true }).start();
+  };
+
+  // ── voice helpers ────────────────────────────────────────────────────────
+  const startListening = useCallback(async () => {
+    if (!mountedRef.current) return;
+    try {
+      await Voice.start('en-US');
+      if (mountedRef.current) setListening(true);
+    } catch (e) {
+      if (mountedRef.current) setVoiceError(true);
+    }
+  }, []);
+
+  const stopListening = useCallback(async () => {
+    try { await Voice.stop(); } catch (_) {}
+    if (mountedRef.current) setListening(false);
+  }, []);
+
+  // Restart session every 50 sec to beat iOS limit
+  const scheduleRestart = useCallback(() => {
+    clearTimeout(restartRef.current);
+    restartRef.current = setTimeout(async () => {
+      if (!mountedRef.current) return;
+      try { await Voice.stop(); } catch (_) {}
+      await startListening();
+      scheduleRestart();
+    }, SESSION_RESTART_MS);
+  }, [startListening]);
+
+  // ── timer helpers ────────────────────────────────────────────────────────
+  const startTimer = useCallback(() => {
+    modeRef.current = 'holding';
+    setMode('holding');
+    setStatus("Holding! Say 'STOP' when done");
+    Animated.timing(tintAnim, { toValue: 1, duration: 400, useNativeDriver: false }).start();
+    tickRef.current = setInterval(() => {
+      secondsRef.current += 1;
+      if (mountedRef.current) setSeconds(secondsRef.current);
+    }, 1000);
+  }, [tintAnim]);
+
+  const stopTimer = useCallback(async () => {
+    clearInterval(tickRef.current);
+    modeRef.current = 'idle';
+    const held = secondsRef.current;
+    secondsRef.current = 0;
+    setSeconds(0);
+    setMode('idle');
+    setStatus("Say 'START' to begin");
+    Animated.timing(tintAnim, { toValue: 0, duration: 400, useNativeDriver: false }).start();
+    if (held > 0) {
+      setLastHold(held);
+      const next = await saveVoiceAttempt(held);
+      if (mountedRef.current) setHistory(next);
+      Vibration.vibrate([0, 40, 60, 40]);
+      // Badge check with fresh hold history
+      badgeCtx?.checkBadges({ progress, voiceHistory: next });
+    }
+  }, [tintAnim, badgeCtx, progress]);
+
+  // ── Voice event handlers ─────────────────────────────────────────────────
+  useEffect(() => {
+    if (!visible) return;
+
+    mountedRef.current = true;
+
+    Voice.onSpeechResults = (e) => {
+      if (!mountedRef.current) return;
+      const transcript = (e.value || []).join(' ');
+      if (modeRef.current !== 'holding' && matchesWord(transcript, START_WORDS)) {
+        startTimer();
+      } else if (modeRef.current === 'holding' && matchesWord(transcript, STOP_WORDS)) {
+        stopTimer();
+      }
+    };
+
+    Voice.onSpeechError = (e) => {
+      // Error 7 = "No match" — benign, just restart
+      const code = e?.error?.code ?? e?.error;
+      const benign = code === '7' || code === 7 || String(code).includes('no match');
+      if (!mountedRef.current) return;
+      if (benign) {
+        startListening();
+      } else {
+        setVoiceError(true);
+        setListening(false);
+      }
+    };
+
+    Voice.onSpeechEnd = () => {
+      // OS ended session — restart if still mounted
+      if (mountedRef.current) startListening();
+    };
+
+    (async () => {
+      // Load history
+      const h = await loadVoiceHistory();
+      if (mountedRef.current) setHistory(h);
+
+      // Check permission via starting a session; the OS prompts if needed
+      try {
+        await Voice.start('en-US');
+        if (mountedRef.current) {
+          setListening(true);
+          setVoiceError(false);
+          setPermDenied(false);
+          startPulse();
+          scheduleRestart();
+        }
+      } catch (e) {
+        if (!mountedRef.current) return;
+        const msg = String(e?.message || e);
+        if (msg.includes('permission') || msg.includes('denied')) {
+          setPermDenied(true);
+        } else {
+          setVoiceError(true);
+        }
+      }
+    })();
+
+    return () => {
+      mountedRef.current = false;
+      clearInterval(tickRef.current);
+      clearTimeout(restartRef.current);
+      stopListening();
+      stopPulse();
+      Voice.onSpeechResults = null;
+      Voice.onSpeechError   = null;
+      Voice.onSpeechEnd     = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
+  // ── Manual mode handlers ─────────────────────────────────────────────────
+  const handleManualStart = () => {
+    if (modeRef.current === 'holding') return;
+    startTimer();
+  };
+  const handleManualStop = () => {
+    if (modeRef.current !== 'holding') return;
+    stopTimer();
+  };
+
+  const switchToManual = async () => {
+    await stopListening();
+    clearTimeout(restartRef.current);
+    stopPulse();
+    setListening(false);
+    setVoiceError(false);
+    setMode('manual');
+    modeRef.current = 'manual';
+    setStatus('Tap START to begin');
+  };
+
+  const switchToVoice = async () => {
+    if (modeRef.current === 'holding') stopTimer();
+    setMode('idle');
+    modeRef.current = 'idle';
+    setVoiceError(false);
+    setStatus("Say 'START' to begin");
+    await startListening();
+    startPulse();
+    scheduleRestart();
+  };
+
+  if (!visible) return null;
+
+  const todayBest   = todaysBest(history);
+  const isHolding   = mode === 'holding';
+  const isManual    = mode === 'manual';
+  const timerColor  = isHolding ? C.accent : C.text;
+  const tintBg      = tintAnim.interpolate({ inputRange: [0, 1], outputRange: ['rgba(215,255,61,0)', 'rgba(215,255,61,0.06)'] });
+
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <Animated.View style={[vt.container, { backgroundColor: tintBg }]}>
+        <LinearGradient colors={[C.bg, '#0D0D0F']} style={StyleSheet.absoluteFill} pointerEvents="none" />
+
+        {/* Header */}
+        <View style={[vt.header, { paddingTop: insets.top + 8 }]}>
+          <TouchableOpacity onPress={onClose} style={vt.headerBtn} activeOpacity={0.7}>
+            <Ionicons name="close" size={20} color={C.text} />
+          </TouchableOpacity>
+          <Text style={[T.label, { color: C.accent, letterSpacing: 2 }]}>HANDS-FREE TIMER</Text>
+          <View style={{ width: 36 }} />
+        </View>
+
+        {/* Permission denied state */}
+        {permDenied ? (
+          <View style={vt.centeredContent}>
+            <Ionicons name="mic-off-outline" size={56} color={C.textMuted} />
+            <Text style={[T.h3, { textAlign: 'center', marginTop: S.lg }]}>Microphone Access Needed</Text>
+            <Text style={[T.body, { textAlign: 'center', color: C.textSub, marginTop: S.sm, maxWidth: 280, lineHeight: 22 }]}>
+              HandstandHub needs microphone and speech recognition permission to detect your voice commands.
+            </Text>
+            <TouchableOpacity
+              style={[vt.accentBtn, { marginTop: S.xl }]}
+              onPress={() => Linking.openSettings()}
+              activeOpacity={0.85}
+            >
+              <LinearGradient colors={G.accent} style={vt.accentBtnGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                <Text style={[T.h4, { color: C.black, fontWeight: '900' }]}>Open Settings</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+            <TouchableOpacity style={{ marginTop: S.md }} onPress={switchToManual} activeOpacity={0.7}>
+              <Text style={[T.small, { color: C.textMuted }]}>Use manual timer instead</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={vt.centeredContent}>
+
+            {/* Timer display */}
+            <Text style={[vt.timerText, { color: timerColor }]}>{fmtTime(seconds)}</Text>
+
+            {/* Status text */}
+            <Text style={[T.body, { color: isHolding ? C.accent : C.textSub, marginTop: S.sm, fontWeight: isHolding ? '700' : '400' }]}>
+              {status}
+            </Text>
+
+            {/* Mic / manual button area */}
+            {!isManual ? (
+              <Animated.View style={[vt.micWrap, { transform: [{ scale: pulseAnim }] }]}>
+                <View style={[vt.micCircle, listening && { borderColor: C.accent, backgroundColor: C.accentDim }]}>
+                  <Ionicons
+                    name={listening ? 'mic' : voiceError ? 'mic-off' : 'mic-outline'}
+                    size={36}
+                    color={listening ? C.accent : C.textMuted}
+                  />
+                </View>
+                <Text style={[T.cap, { color: listening ? C.accent : C.textMuted, marginTop: S.sm }]}>
+                  {listening ? 'Listening…' : voiceError ? 'Mic unavailable' : 'Starting mic…'}
+                </Text>
+              </Animated.View>
+            ) : (
+              /* Manual mode buttons */
+              <View style={{ marginTop: S.xl, width: '100%', paddingHorizontal: S.xl, gap: S.sm }}>
+                {!isHolding ? (
+                  <TouchableOpacity style={vt.accentBtn} onPress={handleManualStart} activeOpacity={0.85}>
+                    <LinearGradient colors={G.accent} style={vt.accentBtnGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                      <Ionicons name="play" size={18} color={C.black} />
+                      <Text style={[T.h4, { color: C.black, fontWeight: '900', fontSize: 16 }]}>START</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity style={vt.accentBtn} onPress={handleManualStop} activeOpacity={0.85}>
+                    <LinearGradient colors={['#FF453A', '#FF6259']} style={vt.accentBtnGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                      <Ionicons name="stop" size={18} color={C.white} />
+                      <Text style={[T.h4, { color: C.white, fontWeight: '900', fontSize: 16 }]}>STOP</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+
+            {/* Voice error retry */}
+            {voiceError && !isManual && (
+              <TouchableOpacity style={[vt.accentBtn, { marginTop: S.lg }]} onPress={switchToVoice} activeOpacity={0.85}>
+                <LinearGradient colors={G.accent} style={vt.accentBtnGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                  <Ionicons name="refresh-outline" size={16} color={C.black} />
+                  <Text style={[T.h4, { color: C.black, fontWeight: '900' }]}>Retry Voice</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            )}
+
+            {/* Stats row */}
+            <View style={vt.statsRow}>
+              <View style={vt.statBox}>
+                <Text style={[T.label, { color: C.textMuted }]}>LAST HOLD</Text>
+                <Text style={[T.h3, { color: C.text }]}>{lastHold}s</Text>
+              </View>
+              <View style={vt.statDivider} />
+              <View style={vt.statBox}>
+                <Text style={[T.label, { color: C.textMuted }]}>TODAY'S BEST</Text>
+                <Text style={[T.h3, { color: todayBest > 0 ? C.accent : C.text }]}>{todayBest}s</Text>
+              </View>
+            </View>
+
+            {/* Mode toggle link */}
+            <TouchableOpacity
+              style={{ paddingVertical: S.sm }}
+              onPress={isManual ? switchToVoice : switchToManual}
+              activeOpacity={0.7}
+            >
+              <Text style={[T.small, { color: C.textMuted }]}>
+                {isManual ? '🎙 Switch to voice timer' : '👆 Tap to use manual timer'}
+              </Text>
+            </TouchableOpacity>
+
+          </View>
+        )}
+      </Animated.View>
+    </Modal>
+  );
+}
+
+const vt = StyleSheet.create({
+  container:     { flex: 1 },
+  header:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: S.md, paddingBottom: S.md },
+  headerBtn:     { width: 36, height: 36, borderRadius: R.full, backgroundColor: C.bgCard, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.border },
+  centeredContent:{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: S.lg, paddingBottom: 60 },
+  timerText:     { fontSize: 88, fontWeight: '900', fontVariant: ['tabular-nums'], letterSpacing: -2, lineHeight: 96 },
+  micWrap:       { marginTop: S.xl, alignItems: 'center' },
+  micCircle:     { width: 90, height: 90, borderRadius: 45, borderWidth: 2, borderColor: C.border, alignItems: 'center', justifyContent: 'center', backgroundColor: C.bgCard },
+  statsRow:      { flexDirection: 'row', alignItems: 'center', marginTop: S.xl, backgroundColor: C.bgCard, borderRadius: R.xl, borderWidth: 1, borderColor: C.border, paddingVertical: S.md },
+  statBox:       { flex: 1, alignItems: 'center', gap: 4 },
+  statDivider:   { width: 1, height: 40, backgroundColor: C.border },
+  accentBtn:     { borderRadius: R.xxl, overflow: 'hidden', width: '100%', marginTop: S.sm },
+  accentBtnGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: S.sm, paddingVertical: S.md + 4 },
+  // HomeScreen entry card
+  entryCard:     { flexDirection: 'row', alignItems: 'center', gap: S.md, backgroundColor: C.bgCard, borderRadius: R.xl, padding: S.md, borderWidth: 1, borderColor: C.accent + '55' },
+  entryIcon:     { width: 44, height: 44, borderRadius: R.md, backgroundColor: C.accentDim, alignItems: 'center', justifyContent: 'center' },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2920,17 +3651,275 @@ const sp = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// STREAK MILESTONE CELEBRATION OVERLAY
+// ─────────────────────────────────────────────────────────────────────────────
+function StreakMilestoneCelebration({ celebration, onDismiss }) {
+  const scaleAnim = useRef(new Animated.Value(0)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
+  const flameAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (celebration) {
+      Animated.parallel([
+        Animated.spring(scaleAnim, { toValue: 1, tension: 60, friction: 8, useNativeDriver: true }),
+        Animated.timing(opacityAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
+      ]).start();
+      Vibration.vibrate([0, 80, 60, 80, 60, 120]);
+      // Pulsing flame
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(flameAnim, { toValue: 1.15, duration: 500, useNativeDriver: true }),
+          Animated.timing(flameAnim, { toValue: 1,    duration: 500, useNativeDriver: true }),
+        ])
+      ).start();
+      // Auto-dismiss after 3 s
+      const t = setTimeout(onDismiss, 3000);
+      return () => clearTimeout(t);
+    } else {
+      scaleAnim.setValue(0); opacityAnim.setValue(0);
+    }
+  }, [celebration]);
+
+  if (!celebration) return null;
+  return (
+    <Animated.View style={[smc.overlay, { opacity: opacityAnim }]} pointerEvents="box-none">
+      <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onDismiss} />
+      <Animated.View style={[smc.card, { transform: [{ scale: scaleAnim }] }]}>
+        <View style={smc.glow} />
+        <Animated.Text style={[smc.flameEmoji, { transform: [{ scale: flameAnim }] }]}>
+          {celebration.streak >= 100 ? '👑' : celebration.streak >= 30 ? '💎' : '🔥'}
+        </Animated.Text>
+        <Text style={smc.label}>ACHIEVEMENT UNLOCKED</Text>
+        <Text style={smc.title}>{celebration.streak}-Day Streak!</Text>
+        <View style={smc.xpPill}>
+          <Text style={smc.xpText}>+{celebration.xp} XP</Text>
+        </View>
+        <Text style={smc.sub}>You're absolutely on fire. Keep going!</Text>
+        <Text style={smc.tap}>Tap to dismiss</Text>
+      </Animated.View>
+    </Animated.View>
+  );
+}
+const smc = StyleSheet.create({
+  overlay:    { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.88)', zIndex: 999 },
+  card:       { width: width * 0.82, backgroundColor: C.bgCard, borderRadius: R.xxl, padding: 32, alignItems: 'center', borderWidth: 1, borderColor: C.accent + '55', shadowColor: C.accent, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 32 },
+  glow:       { position: 'absolute', width: 200, height: 200, borderRadius: 100, backgroundColor: C.accent + '18', top: -20 },
+  flameEmoji: { fontSize: 72, marginBottom: 12 },
+  label:      { fontSize: 10, fontWeight: '700', letterSpacing: 2, color: C.accent, marginBottom: 4 },
+  title:      { fontSize: 30, fontWeight: '900', color: C.text, letterSpacing: -0.5, marginBottom: 12 },
+  xpPill:     { backgroundColor: C.accent, paddingHorizontal: 20, paddingVertical: 6, borderRadius: R.full, marginBottom: 12 },
+  xpText:     { fontSize: 16, fontWeight: '900', color: C.black },
+  sub:        { fontSize: 14, color: C.textSub, textAlign: 'center', lineHeight: 20 },
+  tap:        { fontSize: 11, color: C.textMuted, marginTop: 16 },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STREAK DETAIL MODAL
+// ─────────────────────────────────────────────────────────────────────────────
+function StreakDetailModal({ visible, onClose }) {
+  const insets = useSafeAreaInsets();
+  const { progress } = useContext(UserProgressContext);
+  const { computeForgivingStreak } = useContext(MilestoneContext);
+  const { streak: currentStreak, frozen } = computeForgivingStreak(progress);
+  const longestStreak     = progress.longestStreak ?? currentStreak;
+  const freezeAvailable   = progress.freezeDaysAvailable ?? 1;
+  const freezeUsedDates   = progress.freezeUsedDates ?? [];
+
+  const flameAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(flameAnim, { toValue: 1.12, duration: 800, useNativeDriver: true }),
+          Animated.timing(flameAnim, { toValue: 1,    duration: 800, useNativeDriver: true }),
+        ])
+      ).start();
+    }
+  }, [visible]);
+
+  // Build 30-day calendar grid
+  const calendarDays = (() => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const trainedSet = new Set(
+      (progress.submissions || []).map(s => {
+        const d = new Date(s.date); d.setHours(0, 0, 0, 0); return d.getTime();
+      })
+    );
+    const freezeSet = new Set(freezeUsedDates.map(ds => new Date(ds).getTime()));
+    const days = [];
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(today); d.setDate(d.getDate() - i);
+      const t = d.getTime();
+      const isToday    = i === 0;
+      const trained    = trainedSet.has(t);
+      const usedFreeze = freezeSet.has(t);
+      days.push({ date: d, isToday, trained, usedFreeze });
+    }
+    return days;
+  })();
+
+  // Flame color tier
+  const flameEmoji = currentStreak >= 30 ? '💎🔥' : currentStreak >= 7 ? '🔥' : '🕯️';
+  const flameColor = currentStreak >= 30 ? '#FF8C00' : currentStreak >= 7 ? C.accentOrange : C.textMuted;
+
+  if (!visible) return null;
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: C.bg }}>
+        <LinearGradient colors={[C.bg, '#0D0D0F']} style={StyleSheet.absoluteFill} />
+
+        {/* Header */}
+        <View style={[sdm.header, { paddingTop: insets.top + 12 }]}>
+          <Text style={[T.label, { color: C.accent }]}>STREAK STATS</Text>
+          <TouchableOpacity onPress={onClose} style={sdm.closeBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Ionicons name="close" size={22} color={C.textSub} />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView contentContainerStyle={{ paddingHorizontal: S.md, paddingBottom: 48 }} showsVerticalScrollIndicator={false}>
+
+          {/* Big flame */}
+          <View style={sdm.flameWrap}>
+            <View style={[sdm.flameGlow, { backgroundColor: flameColor + '22' }]} />
+            <Animated.Text style={[sdm.flameIcon, { transform: [{ scale: flameAnim }] }]}>
+              {flameEmoji}
+            </Animated.Text>
+            <Text style={[T.num, { fontSize: 72, color: currentStreak >= 30 ? '#FF8C00' : C.accent }]}>
+              {currentStreak}
+            </Text>
+            <Text style={[T.label, { color: C.textMuted, marginTop: -4 }]}>DAY STREAK</Text>
+            {frozen && (
+              <View style={sdm.frozenPill}>
+                <Text style={{ fontSize: 13 }}>❄️</Text>
+                <Text style={[T.small, { color: '#60C8FF', fontWeight: '700' }]}>Freeze day active</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Stats row */}
+          <View style={sdm.statsRow}>
+            <View style={sdm.statBox}>
+              <Text style={sdm.statVal}>{longestStreak}</Text>
+              <Text style={sdm.statLbl}>All-time best</Text>
+            </View>
+            <View style={sdm.statDivider} />
+            <View style={sdm.statBox}>
+              <Text style={[sdm.statVal, { color: freezeAvailable > 0 ? '#60C8FF' : C.textMuted }]}>
+                {freezeAvailable > 0 ? '1' : '0'}
+              </Text>
+              <Text style={sdm.statLbl}>Freeze day{'\n'}available</Text>
+            </View>
+            <View style={sdm.statDivider} />
+            <View style={sdm.statBox}>
+              <Text style={sdm.statVal}>{progress.submissions?.length ?? 0}</Text>
+              <Text style={sdm.statLbl}>Total{'\n'}sessions</Text>
+            </View>
+          </View>
+
+          {/* 30-day calendar */}
+          <View style={sdm.calSection}>
+            <Text style={[T.h4, { marginBottom: S.sm }]}>Last 30 Days</Text>
+            <View style={sdm.calGrid}>
+              {calendarDays.map((day, i) => {
+                let bg   = C.bgCardAlt;
+                let icon = null;
+                if (day.trained)    { bg = C.success + 'AA'; icon = '✓'; }
+                if (day.usedFreeze) { bg = '#60C8FF44';       icon = '❄'; }
+                if (day.isToday && !day.trained) { bg = 'transparent'; }
+                return (
+                  <View key={i} style={[sdm.calDay, { backgroundColor: bg, borderColor: day.isToday ? C.accent : 'transparent', borderWidth: day.isToday ? 1.5 : 0 }]}>
+                    {icon ? (
+                      <Text style={{ fontSize: day.usedFreeze ? 11 : 10, color: day.trained ? C.black : '#60C8FF' }}>{icon}</Text>
+                    ) : (
+                      <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: day.isToday ? C.accent : C.border }} />
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+            {/* Legend */}
+            <View style={sdm.legend}>
+              {[
+                { color: C.success + 'AA', label: 'Trained' },
+                { color: '#60C8FF44',       label: 'Freeze used' },
+                { color: C.bgCardAlt,       label: 'Rest day' },
+              ].map(l => (
+                <View key={l.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <View style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: l.color, borderWidth: 1, borderColor: C.border }} />
+                  <Text style={[T.cap, { color: C.textMuted }]}>{l.label}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+
+          {/* Milestone progress */}
+          <View style={sdm.milestoneSection}>
+            <Text style={[T.h4, { marginBottom: S.sm }]}>Next milestone</Text>
+            {(() => {
+              const next = [7, 14, 30, 60, 100, 365].find(m => m > currentStreak);
+              if (!next) return <Text style={[T.small, { color: C.accent }]}>You've reached the top. Legendary! 👑</Text>;
+              const pct = currentStreak / next;
+              return (
+                <View style={sdm.mileRow}>
+                  <Text style={sdm.mileEmoji}>{next >= 100 ? '👑' : next >= 30 ? '💎' : '🔥'}</Text>
+                  <View style={{ flex: 1, gap: 4 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                      <Text style={[T.small, { color: C.text, fontWeight: '700' }]}>{next}-Day Streak</Text>
+                      <Text style={[T.cap, { color: C.accent }]}>{currentStreak}/{next}</Text>
+                    </View>
+                    <View style={sdm.mileBarBg}>
+                      <View style={[sdm.mileBarFill, { width: `${Math.min(pct * 100, 100)}%` }]} />
+                    </View>
+                  </View>
+                </View>
+              );
+            })()}
+          </View>
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+}
+
+const sdm = StyleSheet.create({
+  header:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: S.md, paddingBottom: S.sm },
+  closeBtn:        { width: 36, height: 36, borderRadius: 18, backgroundColor: C.bgCard, alignItems: 'center', justifyContent: 'center' },
+  flameWrap:       { alignItems: 'center', paddingTop: 12, paddingBottom: 24 },
+  flameGlow:       { position: 'absolute', width: 180, height: 180, borderRadius: 90, top: 0 },
+  flameIcon:       { fontSize: 48, marginBottom: 4 },
+  frozenPill:      { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#1A2E3A', borderRadius: R.full, paddingHorizontal: 12, paddingVertical: 5, marginTop: 8, borderWidth: 1, borderColor: '#60C8FF44' },
+  statsRow:        { flexDirection: 'row', backgroundColor: C.bgCard, borderRadius: R.xl, borderWidth: 1, borderColor: C.border, marginBottom: S.md, overflow: 'hidden' },
+  statBox:         { flex: 1, alignItems: 'center', paddingVertical: S.lg },
+  statDivider:     { width: 1, backgroundColor: C.border, marginVertical: S.sm },
+  statVal:         { fontSize: 28, fontWeight: '900', color: C.accent, letterSpacing: -1 },
+  statLbl:         { fontSize: 10, fontWeight: '600', color: C.textMuted, textAlign: 'center', marginTop: 2, lineHeight: 14 },
+  calSection:      { backgroundColor: C.bgCard, borderRadius: R.xl, padding: S.md, borderWidth: 1, borderColor: C.border, marginBottom: S.md },
+  calGrid:         { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginBottom: 10 },
+  calDay:          { width: (width - S.md * 2 - S.md * 2 - 5 * 6) / 7, height: (width - S.md * 2 - S.md * 2 - 5 * 6) / 7, borderRadius: 4, alignItems: 'center', justifyContent: 'center' },
+  legend:          { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  milestoneSection:{ backgroundColor: C.bgCard, borderRadius: R.xl, padding: S.md, borderWidth: 1, borderColor: C.border },
+  mileRow:         { flexDirection: 'row', alignItems: 'center', gap: S.sm },
+  mileEmoji:       { fontSize: 28 },
+  mileBarBg:       { height: 6, backgroundColor: C.bgCardAlt, borderRadius: 3, overflow: 'hidden' },
+  mileBarFill:     { height: 6, backgroundColor: C.accent, borderRadius: 3 },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SCREEN – Home (Movemate style)
 // ─────────────────────────────────────────────────────────────────────────────
 function HomeScreen({ navigation }) {
   const insets  = useSafeAreaInsets();
-  const { progress, getLevelProgress, completeDailyChallenge, addXP, dismissStartHere } = useContext(UserProgressContext);
+  const { progress, getLevelProgress, completeDailyChallenge, addXP, dismissStartHere,
+          streakCelebration, dismissStreakCelebration } = useContext(UserProgressContext);
   const { buildWeeklySummary, computeForgivingStreak } = useContext(MilestoneContext);
   const fadeAnim  = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
-  const [dailyExpanded, setDailyExpanded] = useState(false);
+  const [dailyExpanded,   setDailyExpanded]   = useState(false);
   const [showExPicker,    setShowExPicker]    = useState(false);
   const [showWeakness,    setShowWeakness]    = useState(false);
+  const [showVoiceTimer,  setShowVoiceTimer]  = useState(false);
+  const [showStreakModal, setShowStreakModal] = useState(false);
   const [pendingNav,    setPendingNav]    = useState(null);
   const [avatarUri,     setAvatarUri]     = useState(null);
 
@@ -2938,6 +3927,13 @@ function HomeScreen({ navigation }) {
   const daily = getDailyChallenge(progress.currentLevel);
   const weekDays = getWeekDays();
   const { streak: forgivingStreak, frozen } = computeForgivingStreak(progress);
+
+  // Flame appearance: changes at 7-day and 30-day thresholds
+  const streakIcon  = frozen ? 'snow-outline' : forgivingStreak >= 7 ? 'flame' : 'flame-outline';
+  const streakColor = forgivingStreak >= 30 ? '#FF8C00'
+                    : forgivingStreak >= 7  ? C.accentOrange
+                    : forgivingStreak > 0   ? C.accent
+                    : C.textMuted;
 
   useFocusEffect(useCallback(() => {
     Animated.parallel([
@@ -3032,11 +4028,17 @@ function HomeScreen({ navigation }) {
 
         {/* ── 2. STATS ROW ── */}
         <Animated.View style={[hd.statsRow, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+          {/* Streak card — tappable, dynamic flame color */}
+          <TouchableOpacity style={hd.statCard} onPress={() => setShowStreakModal(true)} activeOpacity={0.75}>
+            <Ionicons name={streakIcon} size={24} color={streakColor} />
+            <Text style={[hd.statNum, { color: streakColor }]}>{forgivingStreak}</Text>
+            <Text style={hd.statLabel}>DAY STREAK</Text>
+            {frozen && <Text style={{ fontSize: 9, color: '#60C8FF', marginTop: 1 }}>❄ freeze</Text>}
+          </TouchableOpacity>
           {[
-            { icon: frozen ? 'snow-outline' : 'footsteps-outline', val: forgivingStreak, label: 'DAY STREAK' },
             { icon: 'flash-outline', val: progress.xp, label: 'TOTAL XP' },
             { icon: 'trophy-outline', val: progress.currentLevel, label: 'LEVEL' },
-          ].map((s, i) => (
+          ].map(s => (
             <View key={s.label} style={hd.statCard}>
               <Ionicons name={s.icon} size={24} color={C.accent} />
               <Text style={hd.statNum}>{s.val}</Text>
@@ -3086,8 +4088,28 @@ function HomeScreen({ navigation }) {
           </Text>
         </Animated.View>
 
-        {/* ── Find Your Weakness card ── */}
+        {/* ── Hands-Free Timer card ── */}
         <Animated.View style={[{ marginTop: 12, marginHorizontal: 20 }, { opacity: fadeAnim }]}>
+          <TouchableOpacity
+            style={vt.entryCard}
+            onPress={() => setShowVoiceTimer(true)}
+            activeOpacity={0.85}
+          >
+            <View style={vt.entryIcon}>
+              <Ionicons name="mic" size={20} color={C.accent} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[T.h4, { fontSize: 14, color: C.accent }]}>Hands-Free Timer</Text>
+              <Text style={[T.small, { color: C.textSub, marginTop: 2, lineHeight: 17 }]}>
+                Say 'start' and 'stop' — no touching your phone
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={C.accent} />
+          </TouchableOpacity>
+        </Animated.View>
+
+        {/* ── Find Your Weakness card ── */}
+        <Animated.View style={[{ marginTop: 8, marginHorizontal: 20 }, { opacity: fadeAnim }]}>
           <TouchableOpacity
             style={wd.weaknessEntryCard}
             onPress={() => setShowWeakness(true)}
@@ -3267,7 +4289,12 @@ function HomeScreen({ navigation }) {
       </Modal>
 
       {/* ── Weakness Diagnosis Modal ── */}
+      <VoiceTimerScreen visible={showVoiceTimer} onClose={() => setShowVoiceTimer(false)} />
       <WeaknessDiagnosisModal visible={showWeakness} onClose={() => setShowWeakness(false)} />
+
+      {/* ── Streak detail + celebration ── */}
+      <StreakDetailModal visible={showStreakModal} onClose={() => setShowStreakModal(false)} />
+      <StreakMilestoneCelebration celebration={streakCelebration} onDismiss={dismissStreakCelebration} />
     </View>
   );
 }
@@ -5313,6 +6340,19 @@ function ProfileScreen() {
                   <View style={[pf.notifThumbSmall, notifSettings.weeklyEnabled && { transform: [{ translateX: 14 }] }]} />
                 </View>
               </TouchableOpacity>
+
+              {/* Milestone celebrations toggle */}
+              <TouchableOpacity
+                style={pf.notifRow}
+                onPress={() => saveNotifSettings({ milestoneEnabled: !notifSettings.milestoneEnabled })}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="trophy-outline" size={15} color={C.textMuted} />
+                <Text style={[T.small, { flex: 1, color: C.text }]}>Milestone celebrations</Text>
+                <View style={[pf.notifToggleSmall, notifSettings.milestoneEnabled && { backgroundColor: C.accent }]}>
+                  <View style={[pf.notifThumbSmall, notifSettings.milestoneEnabled && { transform: [{ translateX: 14 }] }]} />
+                </View>
+              </TouchableOpacity>
             </>
           )}
         </Animated.View>
@@ -6043,6 +7083,7 @@ function ProgressScreen() {
   const { progress } = useContext(UserProgressContext);
   const { isPro } = useContext(PurchaseContext);
   const { computeForgivingStreak } = useContext(MilestoneContext);
+  const { earned: earnedBadges } = useContext(BadgeContext);
   const { streak: forgivingStreak, frozen } = computeForgivingStreak(progress);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -6213,6 +7254,51 @@ function ProgressScreen() {
               </View>
             );
           })()}
+          {/* Badges & Achievements */}
+          {(() => {
+            const BADGE_CATEGORIES = ['streak', 'hold', 'level', 'practice', 'program', 'special'];
+            const CAT_LABELS = { streak: 'Streak', hold: 'Hold Time', level: 'Levels', practice: 'Practice', program: 'Programs', special: 'Special' };
+            const earnedIds = new Set(earnedBadges.map(b => b.id));
+            return (
+              <View style={pg.section}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: S.sm }}>
+                  <Text style={T.h4}>Badges & Achievements</Text>
+                  <Text style={[T.cap, { color: C.accent }]}>{earnedIds.size}/{BADGES.length} earned</Text>
+                </View>
+                {BADGE_CATEGORIES.map(cat => {
+                  const catBadges = BADGES.filter(b => b.category === cat);
+                  return (
+                    <View key={cat} style={{ marginBottom: S.md }}>
+                      <Text style={[T.cap, { color: C.textMuted, marginBottom: S.xs, textTransform: 'uppercase', letterSpacing: 1 }]}>
+                        {CAT_LABELS[cat]}
+                      </Text>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                        {catBadges.map(badge => {
+                          const isEarned = earnedIds.has(badge.id);
+                          return (
+                            <View key={badge.id} style={[pg.badgeChip, isEarned ? pg.badgeChipEarned : pg.badgeChipLocked]}>
+                              <Text style={{ fontSize: 18, opacity: isEarned ? 1 : 0.3 }}>{badge.icon}</Text>
+                              <View style={{ flex: 1 }}>
+                                <Text style={[T.small, { fontWeight: '700', color: isEarned ? C.text : C.textMuted, fontSize: 11 }]} numberOfLines={1}>
+                                  {badge.title}
+                                </Text>
+                                <Text style={[T.cap, { color: isEarned ? C.accent : C.textMuted, fontSize: 10 }]} numberOfLines={1}>
+                                  {isEarned ? `+${badge.xpReward} XP earned` : badge.description}
+                                </Text>
+                              </View>
+                              {isEarned && (
+                                <Ionicons name="checkmark-circle" size={14} color={C.accent} />
+                              )}
+                            </View>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            );
+          })()}
         </Animated.View>
       </ScrollView>
       {!isPro() && <ProLockOverlay featureLabel="Progress Charts" featureIcon="📊" />}
@@ -6232,6 +7318,9 @@ const pg = StyleSheet.create({
   timelineDot:  { width: 24, height: 24, borderRadius: 12, borderWidth: 2, alignItems: 'center', justifyContent: 'center', zIndex: 1, marginTop: 2 },
   timelineLine: { position: 'absolute', left: 11, top: 26, width: 2, height: 28, zIndex: 0 },
   timelineContent:{ flex: 1, paddingLeft: S.sm },
+  badgeChip:       { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 7, borderRadius: R.lg, borderWidth: 1, width: (width - S.md * 2 - 8) / 2 },
+  badgeChipEarned: { backgroundColor: C.accent + '18', borderColor: C.accent + '55' },
+  badgeChipLocked: { backgroundColor: C.bgCardAlt, borderColor: C.border },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -7894,41 +8983,47 @@ export default function App() {
       <AuthProvider>
         {/* QUIZ — Welcome + 7 questions + celebration */}
         {stage === 'quiz' && (
-          <PurchaseProvider>
-            <MilestoneProvider>
-              <UserProgressProvider>
-                <OnboardingQuiz onComplete={handleQuizComplete} />
-              </UserProgressProvider>
-            </MilestoneProvider>
-          </PurchaseProvider>
+          <BadgeProvider>
+            <PurchaseProvider>
+              <MilestoneProvider>
+                <UserProgressProvider>
+                  <OnboardingQuiz onComplete={handleQuizComplete} />
+                </UserProgressProvider>
+              </MilestoneProvider>
+            </PurchaseProvider>
+          </BadgeProvider>
         )}
 
         {/* PREVIEW — user browses freely, gate shown on trigger */}
         {stage === 'preview' && (
-          <PurchaseProvider>
-            <MilestoneProvider>
-              <UserProgressProvider onReset={handleReset}>
-                <MainApp isPreview onTriggerGate={handleTriggerGate} />
-              </UserProgressProvider>
-            </MilestoneProvider>
-          </PurchaseProvider>
+          <BadgeProvider>
+            <PurchaseProvider>
+              <MilestoneProvider>
+                <UserProgressProvider onReset={handleReset}>
+                  <MainApp isPreview onTriggerGate={handleTriggerGate} />
+                </UserProgressProvider>
+              </MilestoneProvider>
+            </PurchaseProvider>
+          </BadgeProvider>
         )}
 
         {/* SIGNUP GATE — full-screen, not dismissible */}
         {stage === 'signup_gate' && (
-          <PurchaseProvider>
-            <MilestoneProvider>
-              <UserProgressProvider onReset={handleReset}>
-                {/* Keep MainApp behind the modal so it's not a blank screen */}
-                <MainApp isPreview onTriggerGate={() => {}} />
-                <SignupGateModal
-                  visible
-                  assignedLevel={assignedLevel}
-                  onComplete={handleSignupComplete}
-                />
-              </UserProgressProvider>
-            </MilestoneProvider>
-          </PurchaseProvider>
+          <BadgeProvider>
+            <PurchaseProvider>
+              <MilestoneProvider>
+                <UserProgressProvider onReset={handleReset}>
+                  {/* Keep MainApp behind the modal so it's not a blank screen */}
+                  <MainApp isPreview onTriggerGate={() => {}} />
+                  <SignupGateModal
+                    visible
+                    assignedLevel={assignedLevel}
+                    onComplete={handleSignupComplete}
+                  />
+                </UserProgressProvider>
+              </MilestoneProvider>
+            </PurchaseProvider>
+          </BadgeProvider>
         )}
 
         {/* NOTIFICATIONS STEP */}
@@ -7938,13 +9033,15 @@ export default function App() {
 
         {/* FULL APP */}
         {stage === 'app' && (
-          <PurchaseProvider>
-            <MilestoneProvider>
-              <UserProgressProvider onReset={handleReset}>
-                <MainApp />
-              </UserProgressProvider>
-            </MilestoneProvider>
-          </PurchaseProvider>
+          <BadgeProvider>
+            <PurchaseProvider>
+              <MilestoneProvider>
+                <UserProgressProvider onReset={handleReset}>
+                  <MainApp />
+                </UserProgressProvider>
+              </MilestoneProvider>
+            </PurchaseProvider>
+          </BadgeProvider>
         )}
       </AuthProvider>
     </SafeAreaProvider>

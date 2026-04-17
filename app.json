@@ -15,7 +15,9 @@
       "bundleIdentifier": "com.handstandhub.app",
       "infoPlist": {
         "NSCameraUsageDescription": "HandstandHub needs camera access to verify your handstand form.",
-        "NSMicrophoneUsageDescription": "HandstandHub needs microphone access for video recording."
+        "NSMicrophoneUsageDescription": "HandstandHub uses your microphone to record video and to start/stop your handstand timer hands-free.",
+        "NSSpeechRecognitionUsageDescription": "HandstandHub uses speech recognition to detect 'start' and 'stop' commands during handstand training.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -25,7 +27,8 @@
       "package": "com.handstandhub.app",
       "permissions": [
         "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
       ]
     },
     "web": {},
@@ -34,18 +37,24 @@
         "expo-camera",
         {
           "cameraPermission": "HandstandHub needs camera access to verify your handstand form.",
-          "microphonePermission": "HandstandHub needs microphone access for video recording.",
+          "microphonePermission": "HandstandHub uses your microphone to record video and to start/stop your handstand timer hands-free.",
           "recordAudioAndroid": true
         }
       ],
       [
         "expo-av",
         {
-          "microphonePermission": "HandstandHub needs microphone access for video recording."
+          "microphonePermission": "HandstandHub uses your microphone to record video and to start/stop your handstand timer hands-free."
         }
       ],
       "expo-asset",
-      "expo-secure-store"
-    ]
+      "expo-secure-store",
+      "@react-native-voice/voice"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "e519e3fd-67e8-4128-b4c9-4cd7dcc76fb7"
+      }
+    }
   }
 }
