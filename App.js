@@ -44,6 +44,8 @@ import * as ImagePicker from 'expo-image-picker';
 import NetInfo from '@react-native-community/netinfo';
 import { createClient } from '@supabase/supabase-js';
 import Voice from '@react-native-voice/voice';
+import { LineChart as GiftedLineChart, BarChart as GiftedBarChart } from 'react-native-gifted-charts';
+import ViewShot from 'react-native-view-shot';
 
 const { width, height } = Dimensions.get('window');
 
@@ -6931,10 +6933,10 @@ const ob = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FEATURE 3 – PROGRESS CHARTS (pure RN, no native chart libs required)
+// FEATURE 3 – PROGRESS CHARTS
 // ─────────────────────────────────────────────────────────────────────────────
 
-// BarChart: renders vertical bars from a data array of { label, value } objects
+// ── Legacy pure-RN chart components (used in existing sections) ──────────────
 function BarChart({ data, color = C.accent, maxValue, height: chartH = 100 }) {
   const max = maxValue || Math.max(...data.map(d => d.value), 1);
   return (
@@ -7078,6 +7080,65 @@ function ContribHeatmap({ submissions }) {
   );
 }
 
+// ── Data helpers for progress charts ─────────────────────────────────────────
+function getLast12Weeks() {
+  const weeks = [];
+  const now = new Date();
+  for (let w = 11; w >= 0; w--) {
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - ((now.getDay() + 6) % 7) - w * 7);
+    monday.setHours(0, 0, 0, 0);
+    const end = new Date(monday);
+    end.setDate(monday.getDate() + 7);
+    const mm = monday.getMonth() + 1;
+    const dd = monday.getDate();
+    weeks.push({ start: monday, end, label: w === 0 ? 'Now' : `${mm}/${dd}` });
+  }
+  return weeks;
+}
+
+function getBestHoldPerWeek(timerHistory, weeks) {
+  return weeks.map(week => {
+    const holds = timerHistory.filter(h => {
+      const d = new Date(h.date);
+      return d >= week.start && d < week.end;
+    });
+    const best = holds.length > 0 ? Math.max(...holds.map(h => h.duration)) : 0;
+    return { value: best, label: week.label };
+  });
+}
+
+function getTotalMinutesPerWeek(sessions, weeks) {
+  return weeks.map(week => {
+    const count = sessions.filter(s => {
+      const d = new Date(s.date);
+      return d >= week.start && d < week.end;
+    }).length;
+    return { value: count * 20, label: week.label };
+  });
+}
+
+function getMonthlyHoldProgress(timerHistory) {
+  if (timerHistory.length < 2) return [];
+  const sorted = [...timerHistory].sort((a, b) => new Date(a.date) - new Date(b.date));
+  const now = new Date();
+  const months = [];
+  for (let m = 5; m >= 0; m--) {
+    const start = new Date(now.getFullYear(), now.getMonth() - m, 1);
+    const end   = new Date(now.getFullYear(), now.getMonth() - m + 1, 1);
+    const holds = sorted.filter(h => { const d = new Date(h.date); return d >= start && d < end; });
+    if (holds.length > 0) {
+      months.push({
+        label: start.toLocaleString('default', { month: 'short' }),
+        best:  Math.max(...holds.map(h => h.duration)),
+        avg:   Math.round(holds.reduce((s, h) => s + h.duration, 0) / holds.length),
+        count: holds.length,
+      });
+    }
+  }
+  return months;
+}
+
 function ProgressScreen() {
   const insets = useSafeAreaInsets();
   const { progress } = useContext(UserProgressContext);
@@ -7085,21 +7146,53 @@ function ProgressScreen() {
   const { computeForgivingStreak } = useContext(MilestoneContext);
   const { earned: earnedBadges } = useContext(BadgeContext);
   const { streak: forgivingStreak, frozen } = computeForgivingStreak(progress);
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const fadeAnim    = useRef(new Animated.Value(0)).current;
+  const viewShotRef = useRef(null);
+
+  const [timerHistory, setTimerHistory] = useState([]);
+  const [sharing, setSharing] = useState(false);
 
   useFocusEffect(useCallback(() => {
     fadeAnim.setValue(0);
     Animated.timing(fadeAnim, { toValue: 1, duration: 420, useNativeDriver: true }).start();
+    loadVoiceHistory().then(setTimerHistory);
     return () => fadeAnim.setValue(0);
   }, []));
 
-  const { submissions, completedLevels, streak, totalXP, joinDate } = progress;
+  const { submissions, completedLevels, totalXP, joinDate } = progress;
 
-  // --- Derive weekly sessions bar chart data (last 8 weeks) ---
+  // ── Stats ──────────────────────────────────────────────────────────────────
+  const totalSessions = submissions?.length ?? 0;
+  const longestHold   = timerHistory.length > 0 ? Math.max(...timerHistory.map(h => h.duration)) : 0;
+  const daysSinceJoin = joinDate
+    ? Math.max(1, Math.floor((new Date() - new Date(joinDate)) / 86400000))
+    : 1;
+  const avgPerWeek = (totalSessions / (daysSinceJoin / 7)).toFixed(1);
+
+  // ── Chart data ─────────────────────────────────────────────────────────────
+  const weeks12         = getLast12Weeks();
+  const holdPerWeek     = getBestHoldPerWeek(timerHistory, weeks12);
+  const minsPerWeek     = getTotalMinutesPerWeek(submissions, weeks12);
+  const monthlyProgress = getMonthlyHoldProgress(timerHistory);
+
+  const chartW = width - S.md * 2 - S.lg * 2;
+
+  const giftedHoldData = holdPerWeek.map((w, i) => ({
+    value: w.value,
+    label: i % 3 === 0 ? w.label : '',
+  }));
+
+  const giftedMinsData = minsPerWeek.map((w, i) => ({
+    value: w.value,
+    label: i % 3 === 0 ? w.label : '',
+    frontColor: w.value > 0 ? C.accent : C.bgCardElevated,
+  }));
+
+  // ── Legacy weekly bar chart data (last 8 weeks) ────────────────────────────
   const weeklyData = (() => {
-    const weeks = [];
     const now = new Date();
-    for (let w = 7; w >= 0; w--) {
+    return Array.from({ length: 8 }, (_, idx) => {
+      const w      = 7 - idx;
       const monday = new Date(now);
       monday.setDate(now.getDate() - ((now.getDay() + 6) % 7) - w * 7);
       monday.setHours(0, 0, 0, 0);
@@ -7111,33 +7204,29 @@ function ProgressScreen() {
       }).length;
       const mm = monday.getMonth() + 1;
       const dd = monday.getDate();
-      weeks.push({ label: w === 0 ? 'Now' : `${mm}/${dd}`, value: count, isHighlight: w === 0 });
-    }
-    return weeks;
+      return { label: w === 0 ? 'Now' : `${mm}/${dd}`, value: count, isHighlight: w === 0 };
+    });
   })();
 
-  // --- Personal records ---
-  const bestWeek = Math.max(...weeklyData.map(w => w.value), 0);
-  const totalSessions = submissions?.length ?? 0;
-  const daysSinceJoin = joinDate
-    ? Math.max(1, Math.floor((new Date() - new Date(joinDate)) / 86400000))
-    : 1;
-  const avgPerWeek = (totalSessions / (daysSinceJoin / 7)).toFixed(1);
+  const bestWeek     = Math.max(...weeklyData.map(w => w.value), 0);
+  const levelTimeline = EXERCISE_LEVELS.map(l => ({ level: l, done: completedLevels.includes(l.id) }));
 
-  // --- Level timeline ---
-  const levelTimeline = EXERCISE_LEVELS.map(l => ({
-    level: l,
-    done:  completedLevels.includes(l.id),
-  }));
+  // ── Empty state ────────────────────────────────────────────────────────────
+  const isEmpty = totalSessions === 0 && timerHistory.length === 0 && completedLevels.length === 0;
 
-  const records = [
-    { icon: '🏆', label: 'Total Sessions',    val: `${totalSessions}` },
-    { icon: '🔥', label: 'Best Streak',        val: `${streak} days` },
-    { icon: '📅', label: 'Best Week',           val: `${bestWeek} sessions` },
-    { icon: '📈', label: 'Avg / Week',          val: `${avgPerWeek}` },
-    { icon: '⭐', label: 'Total XP',            val: `${totalXP}` },
-    { icon: '🏅', label: 'Levels Completed',   val: `${completedLevels.length}` },
-  ];
+  // ── Share handler ──────────────────────────────────────────────────────────
+  const handleShare = async () => {
+    if (!viewShotRef.current) return;
+    setSharing(true);
+    try {
+      const uri = await viewShotRef.current.capture();
+      await Share.share({ url: uri, message: 'My handstand progress with HandstandHub 🔥' });
+    } catch (_) {
+      Alert.alert('Could not share', 'Please try again.');
+    } finally {
+      setSharing(false);
+    }
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
@@ -7146,160 +7235,349 @@ function ProgressScreen() {
         contentContainerStyle={{ paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
       >
-        <Animated.View style={{ opacity: fadeAnim }}>
-          {/* Header */}
-          <View style={pg.header}>
-            <Text style={[T.label, { color: C.accent }]}>YOUR JOURNEY SO FAR</Text>
-            <Text style={[T.h2, { fontSize: 32, fontWeight: '900', textTransform: 'uppercase' }]}>PROGRESS</Text>
-          </View>
+        <ViewShot ref={viewShotRef} options={{ format: 'jpg', quality: 0.92 }}>
+          <Animated.View style={{ opacity: fadeAnim, backgroundColor: C.bg }}>
 
-          {/* 3-stat row */}
-          <View style={{ flexDirection: 'row', gap: 12, marginTop: 24, paddingHorizontal: 20 }}>
-            {[
-              { icon: 'barbell-outline', val: progress.submissions.length, label: 'TOTAL WORKOUTS' },
-              { icon: 'time-outline',    val: Math.round(progress.submissions.length * 0.25), label: 'HOURS TRAINED' },
-              { icon: frozen ? 'snow-outline' : 'flame-outline', val: forgivingStreak, label: 'DAY STREAK' },
-            ].map(s => (
-              <View key={s.label} style={hd.statCard}>
-                <Ionicons name={s.icon} size={24} color={C.accent} />
-                <Text style={hd.statNum}>{s.val}</Text>
-                <Text style={hd.statLabel}>{s.label}</Text>
-              </View>
-            ))}
-          </View>
-
-          {/* Sessions per week bar chart */}
-          <View style={pg.chartCard}>
-            <View style={pg.chartHeader}>
-              <Text style={T.h4}>Sessions per Week</Text>
-              <Text style={[T.cap, { color: C.accent }]}>Last 8 weeks</Text>
+            {/* Header */}
+            <View style={pg.header}>
+              <Text style={[T.label, { color: C.accent }]}>YOUR JOURNEY SO FAR</Text>
+              <Text style={[T.h2, { fontSize: 32, fontWeight: '900', textTransform: 'uppercase' }]}>PROGRESS</Text>
             </View>
-            {submissions.length === 0 ? (
-              <View style={pg.emptyChart}>
-                <Text style={[T.small, { color: C.textMuted, textAlign: 'center' }]}>
-                  No sessions yet. Start training to see your chart!
+
+            {/* ── TOP STATS (horizontal scroll) ───────────────────────────── */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: S.md, gap: S.sm, paddingBottom: S.sm }}
+            >
+              {[
+                { icon: 'barbell-outline',                                    val: totalSessions,                       label: 'TOTAL\nSESSIONS' },
+                { icon: frozen ? 'snow-outline' : 'flame-outline',            val: `${forgivingStreak}d`,               label: 'CURRENT\nSTREAK'  },
+                { icon: 'timer-outline',                                       val: longestHold > 0 ? `${longestHold}s` : '—', label: 'LONGEST\nHOLD' },
+                { icon: 'trophy-outline',                                      val: completedLevels.length,             label: 'LEVELS\nDONE'     },
+                { icon: 'star-outline',                                        val: totalXP,                            label: 'TOTAL\nXP'        },
+              ].map(s => (
+                <View key={s.label} style={pg.statCard}>
+                  <Ionicons name={s.icon} size={20} color={C.accent} />
+                  <Text style={pg.statNum}>{s.val}</Text>
+                  <Text style={pg.statLabel}>{s.label}</Text>
+                </View>
+              ))}
+            </ScrollView>
+
+            {isEmpty ? (
+              /* ── EMPTY STATE ──────────────────────────────────────────────── */
+              <View style={pg.emptyState}>
+                <Text style={{ fontSize: 48, marginBottom: S.md }}>📊</Text>
+                <Text style={[T.h3, { textAlign: 'center', marginBottom: S.sm }]}>Nothing here yet</Text>
+                <Text style={[T.body, { textAlign: 'center', color: C.textMuted }]}>
+                  Your progress will appear here once you start training!
                 </Text>
               </View>
-            ) : (
-              <BarChart data={weeklyData} color={C.accent} height={90} />
-            )}
-          </View>
+            ) : (<>
 
-          {/* Activity heatmap */}
-          <View style={pg.chartCard}>
-            <View style={pg.chartHeader}>
-              <Text style={T.h4}>Training Activity</Text>
-              <Text style={[T.cap, { color: C.accent }]}>Last 12 weeks</Text>
-            </View>
-            <ContribHeatmap submissions={submissions} />
-          </View>
-
-          {/* Level progression timeline */}
-          <View style={pg.section}>
-            <Text style={[T.h4, { marginBottom: S.sm }]}>Level Progression</Text>
-            {levelTimeline.map((item, i) => (
-              <View key={item.level.id} style={pg.timelineRow}>
-                <View style={[pg.timelineDot, { backgroundColor: item.done ? C.accent : C.bgCardAlt, borderColor: item.done ? C.accent : C.border }]}>
-                  {item.done && <Ionicons name="checkmark" size={11} color={C.black} />}
-                </View>
-                {i < levelTimeline.length - 1 && (
-                  <View style={[pg.timelineLine, { backgroundColor: item.done ? C.accent + '66' : C.border }]} />
-                )}
-                <View style={pg.timelineContent}>
-                  <Text style={[T.h4, { fontSize: 13, color: item.done ? C.text : C.textMuted }]}>
-                    Level {item.level.id} — {item.level.name}
-                  </Text>
-                  <Text style={[T.cap, { color: item.done ? C.accent : C.textMuted }]}>
-                    {item.done ? '✓ Completed' : 'Not yet completed'}
-                  </Text>
-                </View>
-              </View>
-            ))}
-          </View>
-
-          {/* Weekly breakdown line chart */}
-          {submissions.length >= 3 && (
-            <View style={pg.chartCard}>
-              <View style={pg.chartHeader}>
-                <Text style={T.h4}>Submission Volume</Text>
-                <Text style={[T.cap, { color: C.accent }]}>Trend</Text>
-              </View>
-              <LineChart data={weeklyData.slice(-6)} color={C.accent} height={80} />
-            </View>
-          )}
-
-          {/* Form score trend */}
-          {(() => {
-            const scored = submissions.filter(s => s.formScore != null).slice(0, 8).reverse();
-            if (scored.length < 2) return null;
-            const formData = scored.map((s, i) => ({
-              label: `#${i + 1}`,
-              value: s.formScore,
-            }));
-            const latestScore  = scored[scored.length - 1]?.formScore ?? 0;
-            const earliestScore = scored[0]?.formScore ?? 0;
-            const delta = latestScore - earliestScore;
-            return (
+              {/* ── GRAPH A: Best Hold Per Week ──────────────────────────── */}
               <View style={pg.chartCard}>
                 <View style={pg.chartHeader}>
-                  <Text style={T.h4}>Form Score</Text>
-                  <Text style={[T.cap, { color: delta >= 0 ? C.success : C.error, fontWeight: '700' }]}>
-                    {delta >= 0 ? '+' : ''}{delta}% vs first
-                  </Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={T.h4}>Best Hold Per Week</Text>
+                    <Text style={[T.cap, { color: C.textMuted, marginTop: 2 }]}>Your longest handstand each week</Text>
+                  </View>
+                  {longestHold > 0 && (
+                    <View style={pg.pillBadge}>
+                      <Text style={pg.pillText}>Best: {longestHold}s</Text>
+                    </View>
+                  )}
                 </View>
-                <LineChart data={formData} color={C.success} height={80} />
-                <Text style={[T.cap, { marginTop: S.sm, color: C.textMuted }]}>
-                  Latest: {latestScore}% form quality · Based on {scored.length} AI-analyzed sessions
-                </Text>
+                {timerHistory.length === 0 ? (
+                  <View style={pg.emptyChart}>
+                    <Text style={[T.small, { color: C.textMuted, textAlign: 'center' }]}>
+                      Use the Hold Timer to see your best holds here
+                    </Text>
+                  </View>
+                ) : (
+                  <GiftedLineChart
+                    data={giftedHoldData}
+                    width={chartW}
+                    height={140}
+                    color={C.accent}
+                    thickness={2.5}
+                    curved
+                    hideDataPoints={false}
+                    dataPointsColor={C.accent}
+                    dataPointsRadius={5}
+                    areaChart
+                    startFillColor={C.accent + '44'}
+                    endFillColor="transparent"
+                    startOpacity={0.35}
+                    endOpacity={0}
+                    backgroundColor={C.bgCard}
+                    xAxisColor={C.border}
+                    yAxisColor={C.border}
+                    yAxisTextStyle={{ color: C.textMuted, fontSize: 9 }}
+                    xAxisLabelTextStyle={{ color: C.textMuted, fontSize: 8 }}
+                    noOfSections={4}
+                    yAxisSuffix="s"
+                    isAnimated
+                    animationDuration={800}
+                    rulesColor={C.border}
+                    rulesType="solid"
+                    initialSpacing={8}
+                    endSpacing={8}
+                  />
+                )}
               </View>
-            );
-          })()}
-          {/* Badges & Achievements */}
-          {(() => {
-            const BADGE_CATEGORIES = ['streak', 'hold', 'level', 'practice', 'program', 'special'];
-            const CAT_LABELS = { streak: 'Streak', hold: 'Hold Time', level: 'Levels', practice: 'Practice', program: 'Programs', special: 'Special' };
-            const earnedIds = new Set(earnedBadges.map(b => b.id));
-            return (
-              <View style={pg.section}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: S.sm }}>
-                  <Text style={T.h4}>Badges & Achievements</Text>
-                  <Text style={[T.cap, { color: C.accent }]}>{earnedIds.size}/{BADGES.length} earned</Text>
+
+              {/* ── GRAPH B: Total Practice Minutes Per Week ─────────────── */}
+              <View style={pg.chartCard}>
+                <View style={pg.chartHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={T.h4}>Weekly Practice Time</Text>
+                    <Text style={[T.cap, { color: C.textMuted, marginTop: 2 }]}>Total minutes trained</Text>
+                  </View>
+                  {totalSessions > 0 && (
+                    <View style={pg.pillBadge}>
+                      <Text style={pg.pillText}>{avgPerWeek} sess/wk</Text>
+                    </View>
+                  )}
                 </View>
-                {BADGE_CATEGORIES.map(cat => {
-                  const catBadges = BADGES.filter(b => b.category === cat);
+                {totalSessions === 0 ? (
+                  <View style={pg.emptyChart}>
+                    <Text style={[T.small, { color: C.textMuted, textAlign: 'center' }]}>
+                      Complete sessions to track your training time
+                    </Text>
+                  </View>
+                ) : (
+                  <GiftedBarChart
+                    data={giftedMinsData}
+                    width={chartW}
+                    height={140}
+                    barWidth={Math.max(10, Math.floor(chartW / 18))}
+                    spacing={Math.max(3, Math.floor(chartW / 24))}
+                    roundedTop
+                    noOfSections={4}
+                    xAxisColor={C.border}
+                    yAxisColor={C.border}
+                    yAxisTextStyle={{ color: C.textMuted, fontSize: 9 }}
+                    xAxisLabelTextStyle={{ color: C.textMuted, fontSize: 8 }}
+                    yAxisSuffix="m"
+                    isAnimated
+                    animationDuration={800}
+                    rulesColor={C.border}
+                    backgroundColor={C.bgCard}
+                    initialSpacing={6}
+                    frontColor={C.accent}
+                  />
+                )}
+              </View>
+
+              {/* ── GRAPH C: Month-over-Month Hold Progress ──────────────── */}
+              <View style={pg.chartCard}>
+                <View style={pg.chartHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={T.h4}>Top Improvements</Text>
+                    <Text style={[T.cap, { color: C.textMuted, marginTop: 2 }]}>Monthly hold time growth</Text>
+                  </View>
+                </View>
+                {monthlyProgress.length < 2 ? (
+                  <View style={pg.emptyChart}>
+                    <Text style={[T.small, { color: C.textMuted, textAlign: 'center' }]}>
+                      Keep training for 2+ months to see improvements here!
+                    </Text>
+                  </View>
+                ) : (() => {
+                  const allBest    = Math.max(...monthlyProgress.map(m => m.best), 1);
+                  const first      = monthlyProgress[0];
+                  const last       = monthlyProgress[monthlyProgress.length - 1];
+                  const overallPct = first.best > 0 ? Math.round(((last.best - first.best) / first.best) * 100) : 0;
                   return (
-                    <View key={cat} style={{ marginBottom: S.md }}>
-                      <Text style={[T.cap, { color: C.textMuted, marginBottom: S.xs, textTransform: 'uppercase', letterSpacing: 1 }]}>
-                        {CAT_LABELS[cat]}
-                      </Text>
-                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                        {catBadges.map(badge => {
-                          const isEarned = earnedIds.has(badge.id);
-                          return (
-                            <View key={badge.id} style={[pg.badgeChip, isEarned ? pg.badgeChipEarned : pg.badgeChipLocked]}>
-                              <Text style={{ fontSize: 18, opacity: isEarned ? 1 : 0.3 }}>{badge.icon}</Text>
-                              <View style={{ flex: 1 }}>
-                                <Text style={[T.small, { fontWeight: '700', color: isEarned ? C.text : C.textMuted, fontSize: 11 }]} numberOfLines={1}>
-                                  {badge.title}
-                                </Text>
-                                <Text style={[T.cap, { color: isEarned ? C.accent : C.textMuted, fontSize: 10 }]} numberOfLines={1}>
-                                  {isEarned ? `+${badge.xpReward} XP earned` : badge.description}
-                                </Text>
+                    <View>
+                      {overallPct !== 0 && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: S.sm, marginBottom: S.md }}>
+                          <Ionicons
+                            name={overallPct > 0 ? 'trending-up' : 'trending-down'}
+                            size={18}
+                            color={overallPct > 0 ? C.success : C.error}
+                          />
+                          <Text style={{ color: overallPct > 0 ? C.success : C.error, fontWeight: '700', fontSize: 14 }}>
+                            {overallPct > 0 ? '+' : ''}{overallPct}% overall improvement
+                          </Text>
+                        </View>
+                      )}
+                      {monthlyProgress.map((m, idx) => {
+                        const barRatio = m.best / allBest;
+                        const delta    = idx > 0 ? m.best - monthlyProgress[idx - 1].best : 0;
+                        const isLatest = idx === monthlyProgress.length - 1;
+                        return (
+                          <View key={m.label} style={{ marginBottom: S.md }}>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                              <Text style={[T.small, { fontWeight: '700', color: isLatest ? C.accent : C.text }]}>{m.label}</Text>
+                              <View style={{ flexDirection: 'row', gap: S.sm, alignItems: 'center' }}>
+                                {idx > 0 && delta !== 0 && (
+                                  <Text style={{ fontSize: 10, color: delta > 0 ? C.success : C.error, fontWeight: '700' }}>
+                                    {delta > 0 ? '+' : ''}{delta}s
+                                  </Text>
+                                )}
+                                <Text style={[T.small, { color: C.accent, fontWeight: '700' }]}>{m.best}s best</Text>
+                                <Text style={[T.cap, { color: C.textMuted }]}>{m.count} holds</Text>
                               </View>
-                              {isEarned && (
-                                <Ionicons name="checkmark-circle" size={14} color={C.accent} />
-                              )}
                             </View>
-                          );
-                        })}
-                      </View>
+                            <View style={{ height: 8, backgroundColor: C.bgCardAlt, borderRadius: 4, overflow: 'hidden' }}>
+                              <View style={{
+                                width: `${Math.round(barRatio * 100)}%`,
+                                height: '100%',
+                                backgroundColor: isLatest ? C.accent : C.accent + '88',
+                                borderRadius: 4,
+                              }} />
+                            </View>
+                          </View>
+                        );
+                      })}
                     </View>
                   );
-                })}
+                })()}
               </View>
-            );
-          })()}
-        </Animated.View>
+
+              {/* ── Activity heatmap ─────────────────────────────────────── */}
+              <View style={pg.chartCard}>
+                <View style={pg.chartHeader}>
+                  <Text style={T.h4}>Training Activity</Text>
+                  <Text style={[T.cap, { color: C.accent }]}>Last 12 weeks</Text>
+                </View>
+                <ContribHeatmap submissions={submissions} />
+              </View>
+
+              {/* ── Sessions per week (legacy bar chart) ──────────────────── */}
+              <View style={pg.chartCard}>
+                <View style={pg.chartHeader}>
+                  <Text style={T.h4}>Sessions per Week</Text>
+                  <Text style={[T.cap, { color: C.accent }]}>Last 8 weeks · Best: {bestWeek}</Text>
+                </View>
+                <BarChart data={weeklyData} color={C.accent} height={90} />
+              </View>
+
+              {/* ── Form score trend ─────────────────────────────────────── */}
+              {(() => {
+                const scored = submissions.filter(s => s.formScore != null).slice(0, 8).reverse();
+                if (scored.length < 2) return null;
+                const formData      = scored.map((s, i) => ({ label: `#${i + 1}`, value: s.formScore }));
+                const latestScore   = scored[scored.length - 1]?.formScore ?? 0;
+                const earliestScore = scored[0]?.formScore ?? 0;
+                const delta         = latestScore - earliestScore;
+                return (
+                  <View style={pg.chartCard}>
+                    <View style={pg.chartHeader}>
+                      <Text style={T.h4}>Form Score</Text>
+                      <Text style={[T.cap, { color: delta >= 0 ? C.success : C.error, fontWeight: '700' }]}>
+                        {delta >= 0 ? '+' : ''}{delta}% vs first
+                      </Text>
+                    </View>
+                    <LineChart data={formData} color={C.success} height={80} />
+                    <Text style={[T.cap, { marginTop: S.sm, color: C.textMuted }]}>
+                      Latest: {latestScore}% · Based on {scored.length} AI sessions
+                    </Text>
+                  </View>
+                );
+              })()}
+
+              {/* ── Level progression timeline ────────────────────────────── */}
+              <View style={pg.section}>
+                <Text style={[T.h4, { marginBottom: S.sm }]}>Level Progression</Text>
+                {levelTimeline.map((item, i) => (
+                  <View key={item.level.id} style={pg.timelineRow}>
+                    <View style={[pg.timelineDot, {
+                      backgroundColor: item.done ? C.accent : C.bgCardAlt,
+                      borderColor:     item.done ? C.accent : C.border,
+                    }]}>
+                      {item.done && <Ionicons name="checkmark" size={11} color={C.black} />}
+                    </View>
+                    {i < levelTimeline.length - 1 && (
+                      <View style={[pg.timelineLine, { backgroundColor: item.done ? C.accent + '66' : C.border }]} />
+                    )}
+                    <View style={pg.timelineContent}>
+                      <Text style={[T.h4, { fontSize: 13, color: item.done ? C.text : C.textMuted }]}>
+                        Level {item.level.id} — {item.level.name}
+                      </Text>
+                      <Text style={[T.cap, { color: item.done ? C.accent : C.textMuted }]}>
+                        {item.done ? '✓ Completed' : 'Not yet completed'}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+
+              {/* ── Badges & Achievements ─────────────────────────────────── */}
+              {(() => {
+                const BADGE_CATEGORIES = ['streak', 'hold', 'level', 'practice', 'program', 'special'];
+                const CAT_LABELS = {
+                  streak: 'Streak', hold: 'Hold Time', level: 'Levels',
+                  practice: 'Practice', program: 'Programs', special: 'Special',
+                };
+                const earnedIds = new Set(earnedBadges.map(b => b.id));
+                return (
+                  <View style={pg.section}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: S.sm }}>
+                      <Text style={T.h4}>Badges & Achievements</Text>
+                      <Text style={[T.cap, { color: C.accent }]}>{earnedIds.size}/{BADGES.length} earned</Text>
+                    </View>
+                    {BADGE_CATEGORIES.map(cat => {
+                      const catBadges = BADGES.filter(b => b.category === cat);
+                      return (
+                        <View key={cat} style={{ marginBottom: S.md }}>
+                          <Text style={[T.cap, { color: C.textMuted, marginBottom: S.xs, textTransform: 'uppercase', letterSpacing: 1 }]}>
+                            {CAT_LABELS[cat]}
+                          </Text>
+                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                            {catBadges.map(badge => {
+                              const isEarned = earnedIds.has(badge.id);
+                              return (
+                                <View key={badge.id} style={[pg.badgeChip, isEarned ? pg.badgeChipEarned : pg.badgeChipLocked]}>
+                                  <Text style={{ fontSize: 18, opacity: isEarned ? 1 : 0.3 }}>{badge.icon}</Text>
+                                  <View style={{ flex: 1 }}>
+                                    <Text style={[T.small, { fontWeight: '700', color: isEarned ? C.text : C.textMuted, fontSize: 11 }]} numberOfLines={1}>
+                                      {badge.title}
+                                    </Text>
+                                    <Text style={[T.cap, { color: isEarned ? C.accent : C.textMuted, fontSize: 10 }]} numberOfLines={1}>
+                                      {isEarned ? `+${badge.xpReward} XP earned` : badge.description}
+                                    </Text>
+                                  </View>
+                                  {isEarned && <Ionicons name="checkmark-circle" size={14} color={C.accent} />}
+                                </View>
+                              );
+                            })}
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                );
+              })()}
+
+              {/* Watermark — visible in screenshot */}
+              <Text style={[T.cap, { textAlign: 'center', color: C.textMuted, marginBottom: S.md }]}>
+                Made with HandstandHub 💪
+              </Text>
+
+            </>)}
+          </Animated.View>
+        </ViewShot>
+
+        {/* Share button — outside ViewShot so it's not captured */}
+        <TouchableOpacity
+          style={[pg.shareBtn, sharing && { opacity: 0.6 }]}
+          onPress={handleShare}
+          activeOpacity={0.8}
+          disabled={sharing}
+        >
+          {sharing ? (
+            <ActivityIndicator color={C.black} size="small" />
+          ) : (
+            <>
+              <Ionicons name="share-outline" size={18} color={C.black} style={{ marginRight: 8 }} />
+              <Text style={pg.shareBtnText}>Share Progress</Text>
+            </>
+          )}
+        </TouchableOpacity>
       </ScrollView>
       {!isPro() && <ProLockOverlay featureLabel="Progress Charts" featureIcon="📊" />}
     </View>
@@ -7307,20 +7585,26 @@ function ProgressScreen() {
 }
 
 const pg = StyleSheet.create({
-  header:       { paddingHorizontal: S.md, paddingTop: S.md, paddingBottom: S.sm },
-  section:      { marginHorizontal: S.md, marginBottom: S.lg },
-  recordsGrid:  { flexDirection: 'row', flexWrap: 'wrap', gap: S.sm },
-  recordCard:   { width: (width - S.md * 2 - S.sm * 2) / 3, backgroundColor: C.bgCard, borderRadius: R.xl, padding: S.md, alignItems: 'center', borderWidth: 1, borderColor: C.border },
-  chartCard:    { marginHorizontal: S.md, marginBottom: S.md, backgroundColor: C.bgCard, borderRadius: R.xl, padding: S.lg, borderWidth: 1, borderColor: C.border },
-  chartHeader:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: S.md },
-  emptyChart:   { height: 80, alignItems: 'center', justifyContent: 'center' },
-  timelineRow:  { flexDirection: 'row', alignItems: 'flex-start', marginBottom: S.md, position: 'relative' },
-  timelineDot:  { width: 24, height: 24, borderRadius: 12, borderWidth: 2, alignItems: 'center', justifyContent: 'center', zIndex: 1, marginTop: 2 },
-  timelineLine: { position: 'absolute', left: 11, top: 26, width: 2, height: 28, zIndex: 0 },
-  timelineContent:{ flex: 1, paddingLeft: S.sm },
+  header:          { paddingHorizontal: S.md, paddingTop: S.md, paddingBottom: S.sm },
+  section:         { marginHorizontal: S.md, marginBottom: S.lg },
+  statCard:        { width: 100, backgroundColor: C.bgCard, borderRadius: R.xl, padding: S.md, alignItems: 'center', borderWidth: 1, borderColor: C.border, gap: 4 },
+  statNum:         { fontSize: 24, fontWeight: '900', color: C.text, letterSpacing: -0.5 },
+  statLabel:       { fontSize: 9, fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase', color: C.textMuted, textAlign: 'center' },
+  chartCard:       { marginHorizontal: S.md, marginBottom: S.md, backgroundColor: C.bgCard, borderRadius: R.xl, padding: S.lg, borderWidth: 1, borderColor: C.border },
+  chartHeader:     { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: S.md },
+  emptyChart:      { height: 80, alignItems: 'center', justifyContent: 'center' },
+  emptyState:      { alignItems: 'center', justifyContent: 'center', paddingHorizontal: S.lg, paddingVertical: S.xxl },
+  pillBadge:       { backgroundColor: C.accent + '22', borderRadius: R.full, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: C.accent + '44' },
+  pillText:        { fontSize: 11, fontWeight: '700', color: C.accent },
+  timelineRow:     { flexDirection: 'row', alignItems: 'flex-start', marginBottom: S.md, position: 'relative' },
+  timelineDot:     { width: 24, height: 24, borderRadius: 12, borderWidth: 2, alignItems: 'center', justifyContent: 'center', zIndex: 1, marginTop: 2 },
+  timelineLine:    { position: 'absolute', left: 11, top: 26, width: 2, height: 28, zIndex: 0 },
+  timelineContent: { flex: 1, paddingLeft: S.sm },
   badgeChip:       { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 7, borderRadius: R.lg, borderWidth: 1, width: (width - S.md * 2 - 8) / 2 },
   badgeChipEarned: { backgroundColor: C.accent + '18', borderColor: C.accent + '55' },
   badgeChipLocked: { backgroundColor: C.bgCardAlt, borderColor: C.border },
+  shareBtn:        { marginHorizontal: S.md, marginTop: S.md, backgroundColor: C.accent, borderRadius: R.xl, paddingVertical: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  shareBtnText:    { fontSize: 15, fontWeight: '800', color: C.black },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

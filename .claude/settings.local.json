@@ -8,7 +8,10 @@
       "Bash(npm install:*)",
       "Bash(npx expo:*)",
       "Bash(powershell -Command \"cd 'C:\\\\Users\\\\shach\\\\cloude app'; npx expo install expo-notifications expo-secure-store '@react-native-community/netinfo' '@supabase/supabase-js' 2>&1\")",
-      "Bash(cmd /c \"type \\\\\"c:\\\\Users\\\\shach\\\\cloude app\\\\App.js\\\\\" | find /c /v \\\\\"\\\\\"\")"
+      "Bash(cmd /c \"type \\\\\"c:\\\\Users\\\\shach\\\\cloude app\\\\App.js\\\\\" | find /c /v \\\\\"\\\\\"\")",
+      "Bash(git clone *)",
+      "Skill(update-config)",
+      "Bash(dir)"
     ]
   }
 }
