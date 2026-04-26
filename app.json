@@ -2,6 +2,7 @@
   "expo": {
     "name": "HandstandHub",
     "slug": "handstandhub",
+    "scheme": "handstandhub",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
@@ -48,13 +49,13 @@
         }
       ],
       "expo-asset",
-      "expo-secure-store",
-      "@react-native-voice/voice"
+      "expo-secure-store"
     ],
     "extra": {
       "eas": {
         "projectId": "e519e3fd-67e8-4128-b4c9-4cd7dcc76fb7"
-      }
+      },
+      "aiCheckUrl": "https://kkilkggghydodfnbeoyw.supabase.co/functions/v1/ai-check"
     }
   }
 }

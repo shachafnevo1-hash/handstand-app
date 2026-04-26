@@ -11,7 +11,16 @@
       "Bash(cmd /c \"type \\\\\"c:\\\\Users\\\\shach\\\\cloude app\\\\App.js\\\\\" | find /c /v \\\\\"\\\\\"\")",
       "Bash(git clone *)",
       "Skill(update-config)",
-      "Bash(dir)"
+      "Bash(dir)",
+      "mcp__notebooklm-mcp-2026__list_notebooks",
+      "mcp__notebooklm-mcp-2026__add_source_url",
+      "mcp__notebooklm-mcp-2026__query_notebook",
+      "PowerShell(Add-Type -AssemblyName System.Drawing; $img = [System.Drawing.Image]::FromFile\\(\"C:\\\\Users\\\\shach\\\\cloude app\\\\assets\\\\handstand-logo.png\"\\); Write-Host \"Size: $\\($img.Width\\) x $\\($img.Height\\)\"; $img.Dispose\\(\\))",
+      "PowerShell(powershell -ExecutionPolicy Bypass -File \"c:\\\\Users\\\\shach\\\\cloude app\\\\scripts\\\\make-logo-transparent.ps1\")",
+      "WebFetch(domain:docs.claude.com)",
+      "PowerShell(Get-Item \"c:\\\\Users\\\\shach\\\\cloude app\\\\App.js\" | Select-Object FullName, @{N=\"Lines\";E={\\(Get-Content $_.FullName | Measure-Object -Line\\).Lines}})",
+      "PowerShell(git log --all --oneline -- .env scripts/generate-image.js 2>$null | Select-Object -First 10; git ls-files | Select-String -Pattern \"\\\\.env$\")",
+      "PowerShell(git log --all --pretty=format:\"%h %s\" -- .env 2>&1 | Select-Object -First 5; Write-Output \"---\"; git log --all --pretty=format:\"%h %s\" 2>&1 | Select-Object -First 10)"
     ]
   }
 }

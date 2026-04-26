@@ -28,7 +28,6 @@ import {
   ActivityIndicator, TextInput, KeyboardAvoidingView, Vibration, Alert,
   Image, ImageBackground,
 } from 'react-native';
-import { WebView } from 'react-native-webview';
 import YoutubePlayer from 'react-native-youtube-iframe';
 import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import { Video, ResizeMode } from 'expo-av';
@@ -39,15 +38,112 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import * as Notifications from 'expo-notifications';
 import * as ImagePicker from 'expo-image-picker';
 import NetInfo from '@react-native-community/netinfo';
 import { createClient } from '@supabase/supabase-js';
-import Voice from '@react-native-voice/voice';
+// import Voice from '@react-native-voice/voice'; // disabled for Expo Go
 import { LineChart as GiftedLineChart, BarChart as GiftedBarChart } from 'react-native-gifted-charts';
 import ViewShot from 'react-native-view-shot';
+import Svg, { Path, Circle, Rect, Line } from 'react-native-svg';
+import Constants from 'expo-constants';
 
 const { width, height } = Dimensions.get('window');
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SVG ICON COMPONENTS — replaces all emoji usage in visual contexts
+// ─────────────────────────────────────────────────────────────────────────────
+
+const HANDSTAND_LOGO = require('./assets/handstand-logo.png');
+const LOGO_RATIO = 433 / 1240; // natural width:height of the asset
+const HandstandFigure = ({ size = 120 }) => {
+  const h = size;
+  const w = Math.round(h * LOGO_RATIO);
+  return (
+    <View style={{ width: w, height: h, alignItems: 'center', justifyContent: 'center' }}>
+      <Image source={HANDSTAND_LOGO} style={{ width: w, height: h }} resizeMode="contain" fadeDuration={0} />
+    </View>
+  );
+};
+
+const FlameIcon = ({ size = 24, active = true }) => {
+  const outer = active ? '#FF6B35' : '#30363D';
+  const inner = active ? '#FFD700' : '#1C1D21';
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M12 2 C9.5 5.5 7 8.5 8.5 12.5 C9.5 15 7.5 16.5 7.5 18.5 C7.5 21 9.5 22.5 12 22.5 C14.5 22.5 16.5 21 16.5 18.5 C16.5 16.5 14.5 15 15.5 12.5 C17 8.5 14.5 5.5 12 2Z" fill={outer} />
+      <Path d="M12 13 C10.5 15 11 17 12 17.5 C13 17 13.5 15 12 13Z" fill={inner} />
+    </Svg>
+  );
+};
+
+const IceFlakeIcon = ({ size = 24, color = '#60A5FA' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Line x1="12" y1="3" x2="12" y2="21" stroke={color} strokeWidth="2" strokeLinecap="round" />
+    <Line x1="3.8" y1="7.5" x2="20.2" y2="16.5" stroke={color} strokeWidth="2" strokeLinecap="round" />
+    <Line x1="20.2" y1="7.5" x2="3.8" y2="16.5" stroke={color} strokeWidth="2" strokeLinecap="round" />
+    <Path d="M10 5 L12 3 L14 5" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    <Path d="M10 19 L12 21 L14 19" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    <Path d="M5.3 9.5 L3.8 7.5 L6.2 7.1" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    <Path d="M18.7 9.5 L20.2 7.5 L17.8 7.1" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    <Circle cx="12" cy="12" r="2.5" fill={color} />
+  </Svg>
+);
+
+const DiceIcon = ({ size = 20, color = '#D7FF3D' }) => (
+  <Svg width={size} height={size} viewBox="0 0 20 20">
+    <Rect x="1.5" y="1.5" width="17" height="17" rx="3.5" fill="#161B22" stroke="#30363D" strokeWidth="1.5" />
+    <Circle cx="6" cy="6" r="1.6" fill={color} />
+    <Circle cx="14" cy="6" r="1.6" fill={color} />
+    <Circle cx="10" cy="10" r="1.6" fill={color} />
+    <Circle cx="6" cy="14" r="1.6" fill={color} />
+    <Circle cx="14" cy="14" r="1.6" fill={color} />
+  </Svg>
+);
+
+const SparkleIcon = ({ size = 20, color = '#D7FF3D' }) => (
+  <Svg width={size} height={size} viewBox="0 0 20 20">
+    <Path d="M10 2 L11.2 8.8 L18 10 L11.2 11.2 L10 18 L8.8 11.2 L2 10 L8.8 8.8 Z" fill={color} />
+    <Path d="M16 3 L16.6 5.4 L19 6 L16.6 6.6 L16 9 L15.4 6.6 L13 6 L15.4 5.4 Z" fill={color} opacity="0.6" />
+  </Svg>
+);
+
+const SimpleAvatar = ({ size = 44, bg = '#1C2128', fg = '#D7FF3D' }) => (
+  <Svg width={size} height={size} viewBox="0 0 44 44">
+    <Circle cx="22" cy="22" r="22" fill={bg} />
+    <Circle cx="22" cy="18" r="6" fill={fg} />
+    <Path d="M10 40 C10 30 16 26 22 26 C28 26 34 30 34 40 Z" fill={fg} />
+  </Svg>
+);
+const Avatar1 = (props) => <SimpleAvatar {...props} bg="#1C2128" fg="#D7FF3D" />;
+const Avatar2 = (props) => <SimpleAvatar {...props} bg="#1C2128" fg="#8B95A7" />;
+const Avatar3 = (props) => <SimpleAvatar {...props} bg="#1C2128" fg="#E8EEF7" />;
+
+const WhatsAppIcon = ({ size = 22 }) => (
+  <Svg width={size} height={size} viewBox="0 0 22 22">
+    <Path d="M11 2 C6.03 2 2 6.03 2 11 C2 12.7 2.46 14.3 3.27 15.7 L2 20 L6.43 18.76 C7.79 19.55 9.35 20 11 20 C15.97 20 20 15.97 20 11 C20 6.03 15.97 2 11 2Z" fill="#25D366" />
+    <Path d="M8.1 7C7.9 7 7.6 7.1 7.4 7.3 C7.1 7.6 6.5 8.2 6.5 9.4 C6.5 10.6 7.4 11.8 7.6 12.1 C7.8 12.4 9.4 14.9 11.8 15.8 C13.7 16.5 14.2 16.3 14.7 16.2 C15.3 16 16.2 15.4 16.4 14.8 C16.6 14.2 16.6 13.7 16.5 13.6 C16.4 13.5 16.2 13.4 15.9 13.3 L14.5 12.6 C14.2 12.5 14 12.4 13.8 12.7 L13.3 13.3 C13.1 13.6 13 13.6 12.7 13.5 C12.4 13.3 11.5 13 10.4 12 C9.6 11.3 9.1 10.4 8.9 10.1 C8.7 9.8 8.9 9.6 9.1 9.4 L9.5 8.9 C9.7 8.7 9.7 8.5 9.8 8.3 L9.9 6.9 C9.9 6.6 9.7 6.4 9.4 6.4 L8.4 6.4 C8.3 6.4 8.2 6.5 8.1 7Z" fill="white" />
+  </Svg>
+);
+
+const InstagramIcon = ({ size = 22 }) => (
+  <Svg width={size} height={size} viewBox="0 0 22 22">
+    <Rect x="2" y="2" width="18" height="18" rx="5" fill="none" stroke="#E1306C" strokeWidth="2" />
+    <Circle cx="11" cy="11" r="4.5" fill="none" stroke="#E1306C" strokeWidth="2" />
+    <Circle cx="16.5" cy="5.5" r="1.3" fill="#E1306C" />
+  </Svg>
+);
+
+const ShareIcon = ({ size = 22, color = '#D7FF3D' }) => (
+  <Svg width={size} height={size} viewBox="0 0 22 22">
+    <Circle cx="17" cy="5" r="2.5" fill={color} />
+    <Circle cx="17" cy="17" r="2.5" fill={color} />
+    <Circle cx="5" cy="11" r="2.5" fill={color} />
+    <Line x1="7.2" y1="10.1" x2="14.8" y2="6.1" stroke={color} strokeWidth="1.8" strokeLinecap="round" />
+    <Line x1="7.2" y1="11.9" x2="14.8" y2="15.9" stroke={color} strokeWidth="1.8" strokeLinecap="round" />
+  </Svg>
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // THEME — must be defined first; everything else in the file depends on these
@@ -130,7 +226,9 @@ const T = {
 // Deploy: supabase functions deploy ai-check
 // Secret: supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
 // ─────────────────────────────────────────────────────────────────────────────
-const AI_CHECK_URL = 'https://kkilkggghydodfnbeoyw.supabase.co/functions/v1/ai-check';
+const AI_CHECK_URL =
+  Constants.expoConfig?.extra?.aiCheckUrl ??
+  'https://kkilkggghydodfnbeoyw.supabase.co/functions/v1/ai-check';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SUPABASE CLIENT
@@ -140,23 +238,44 @@ const AI_CHECK_URL = 'https://kkilkggghydodfnbeoyw.supabase.co/functions/v1/ai-c
 const SUPABASE_URL      = 'https://kkilkggghydodfnbeoyw.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtraWxrZ2dnaHlkb2RmbmJlb3l3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzOTg0MjQsImV4cCI6MjA5MDk3NDQyNH0.PbhjFAJiTdiL5ETE2xAYnyyVf5SsEf6H18Dmqnwv-N4';
 
-// Deep-link scheme Supabase uses for email confirmation / password reset.
-// In Expo Go the link opens as exp://<lan-ip>:8081 — we use the slug as path
-// so the app can intercept it. In a production build swap for your custom scheme.
-const AUTH_REDIRECT_URL = 'exp://192.168.1.7:8081/--/auth-callback';
+// Deep-link scheme used by Supabase for email confirmation / password reset.
+// Configure `scheme: "handstandhub"` in app.json + add this URL to the Supabase
+// dashboard's allowed redirect list before shipping a production build.
+const AUTH_REDIRECT_URL = 'handstandhub://auth-callback';
 
 // True only when the developer has replaced the placeholder values above.
 const SUPABASE_CONFIGURED =
   !SUPABASE_URL.includes('<YOUR_PROJECT_REF>') &&
   !SUPABASE_ANON_KEY.includes('<YOUR_ANON_KEY>');
 
-// Use AsyncStorage for Supabase session persistence — no key-character
-// restrictions unlike SecureStore (which rejects Supabase's internal key
-// names containing ":" characters).
+// SecureStore-backed adapter for Supabase session persistence. Tokens go into
+// iOS Keychain / Android Keystore instead of plaintext AsyncStorage. Supabase's
+// internal key names contain characters SecureStore rejects (":", etc.) so we
+// hash them to a deterministic safe slug before reading/writing.
+const _safeKey = (k) =>
+  'sb_' + String(k).replace(/[^A-Za-z0-9._-]/g, (c) =>
+    '_' + c.charCodeAt(0).toString(16)
+  ).slice(0, 60);
+
+const SecureStorageAdapter = {
+  getItem:    async (key) => { try { return await SecureStore.getItemAsync(_safeKey(key)); } catch { return null; } },
+  setItem:    async (key, value) => { try { await SecureStore.setItemAsync(_safeKey(key), value); } catch (e) { console.warn('SecureStore.setItem failed', key, e); } },
+  removeItem: async (key) => { try { await SecureStore.deleteItemAsync(_safeKey(key)); } catch {} },
+};
+
+// PII-grade storage for email, display name, and quiz answers (which include
+// age range, body type, and biological sex). Backs onto SecureStorageAdapter
+// so it lands in iOS Keychain / Android Keystore — never plaintext disk.
+const sensitiveStore = {
+  get:    (key) => SecureStorageAdapter.getItem(key),
+  set:    (key, value) => SecureStorageAdapter.setItem(key, value),
+  remove: (key) => SecureStorageAdapter.removeItem(key),
+};
+
 const supabase = SUPABASE_CONFIGURED
   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: {
-        storage:            AsyncStorage,
+        storage:            SecureStorageAdapter,
         autoRefreshToken:   true,
         persistSession:     true,
         detectSessionInUrl: false,
@@ -189,6 +308,16 @@ function AuthProvider({ children }) {
       setSession(s);
       if (s?.user) {
         fetchUserProfile(s.user.id);
+        // If a trial was started locally pre-signup, sync it server-side now.
+        AsyncStorage.getItem('@handstandai_pending_trial')
+          .then(async (productId) => {
+            if (!productId) return;
+            try {
+              await supabase.rpc('start_trial', { p_product_id: productId });
+              await AsyncStorage.removeItem('@handstandai_pending_trial');
+            } catch (err) { console.warn('pending start_trial sync failed', err); }
+          })
+          .catch((e) => console.warn('pending trial check failed', e));
       } else {
         setAuthUser(null);
       }
@@ -198,21 +327,36 @@ function AuthProvider({ children }) {
 
   const fetchUserProfile = async (userId) => {
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('users')
         .select('*')
         .eq('id', userId)
         .single();
+      if (error) { console.warn('fetchUserProfile error', error); return; }
       if (data) setAuthUser(data);
-    } catch (_) {}
+    } catch (e) { console.warn('fetchUserProfile threw', e); }
   };
+
+  // Local sign-up throttle — 3 attempts per minute per device. Defends against
+  // accidental double-taps and slows targeted email-bombing. Server-side rate
+  // limits and captcha must be enabled in the Supabase dashboard for full
+  // protection.
+  const _signUpAttemptsRef = useRef([]);
+  const SIGNUP_WINDOW_MS = 60_000;
+  const SIGNUP_MAX       = 3;
 
   const signUp = async (email, password, displayName) => {
     if (!supabase) throw new Error('Supabase is not configured.');
+    const now = Date.now();
+    _signUpAttemptsRef.current = _signUpAttemptsRef.current.filter(t => now - t < SIGNUP_WINDOW_MS);
+    if (_signUpAttemptsRef.current.length >= SIGNUP_MAX) {
+      throw new Error('Too many sign-up attempts. Please wait a minute and try again.');
+    }
+    _signUpAttemptsRef.current.push(now);
     const { data, error } = await supabase.auth.signUp({
       email, password,
       options: {
-        data: { display_name: displayName },
+        data: { display_name: cleanDisplayName(displayName) },
         emailRedirectTo: AUTH_REDIRECT_URL,
       },
     });
@@ -224,8 +368,11 @@ function AuthProvider({ children }) {
     if (!supabase) throw new Error('Supabase is not configured.');
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
+    // last_login is best-effort — log failures so they're not invisible.
     supabase.from('users').update({ last_login: new Date().toISOString() })
-      .eq('id', data.user.id).then(() => {});
+      .eq('id', data.user.id)
+      .then(({ error: e }) => { if (e) console.warn('last_login update failed', e); })
+      .catch((e) => console.warn('last_login update threw', e));
     return data;
   };
 
@@ -252,7 +399,7 @@ function AuthProvider({ children }) {
   const updateDisplayName = async (name) => {
     if (!supabase || !session?.user) return;
     const { error } = await supabase.from('users')
-      .update({ display_name: name })
+      .update({ display_name: cleanDisplayName(name) })
       .eq('id', session.user.id);
     if (error) throw error;
     setAuthUser(prev => prev ? { ...prev, display_name: name } : prev);
@@ -281,6 +428,25 @@ function AuthProvider({ children }) {
   );
 }
 
+// ── Input sanitisation helpers ────────────────────────────────────────────────
+// Strip unsafe characters from display names before storing or sending to Supabase.
+function cleanDisplayName(s) {
+  if (!s || typeof s !== 'string') return '';
+  return s
+    .trim()
+    .slice(0, 40)
+    .replace(/[^a-zA-Z0-9\u00C0-\u024F\s\-'.]/g, '') // letters, digits, spaces, - ' .
+    .replace(/\s{2,}/g, ' ')                           // collapse multiple spaces
+    .trim();
+}
+
+// Normalise email — trim, lowercase, cap at RFC 5321 max (254 chars).
+function cleanEmail(s) {
+  if (!s || typeof s !== 'string') return '';
+  return s.trim().toLowerCase().slice(0, 254);
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Helper to map Supabase error codes to human-readable messages
 function friendlyAuthError(error) {
   const msg = error?.message?.toLowerCase() ?? '';
@@ -303,6 +469,74 @@ function friendlyAuthError(error) {
     return 'Check your internet connection and try again.';
   }
   return error?.message ?? 'Something went wrong. Please try again.';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HARDENED AI PROXY CALL — adds Authorization header + size pre-check
+// Used by both the live capture flow and the offline retry queue.
+// ─────────────────────────────────────────────────────────────────────────────
+const AI_MAX_BASE64_LEN = 5_500_000; // ~4 MB raw
+
+async function aiCheckFetch(imageBase64, { signal } = {}) {
+  if (!imageBase64 || typeof imageBase64 !== 'string') {
+    throw new Error('No image to send.');
+  }
+  if (imageBase64.length > AI_MAX_BASE64_LEN) {
+    throw new Error('Image too large. Try a shorter clip.');
+  }
+  let token = null;
+  if (supabase) {
+    try {
+      const { data } = await supabase.auth.getSession();
+      token = data?.session?.access_token || null;
+    } catch (e) { console.warn('aiCheckFetch: getSession failed', e); }
+  }
+  if (!token) throw new Error('Not signed in.');
+  const res = await fetch(AI_CHECK_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({ imageBase64 }),
+    signal,
+  });
+  if (res.status === 401) throw new Error('Session expired. Sign in again.');
+  if (res.status === 402) throw new Error('Pro subscription required.');
+  if (res.status === 413) throw new Error('Image too large.');
+  return res;
+}
+
+// Server-side entitlement check — single source of truth. Returns
+// { isActive, trialEndsAt, currentPeriodEnd } or null when offline.
+async function fetchEntitlement() {
+  if (!supabase) return null;
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return { isActive: false };
+    const { data, error } = await supabase
+      .from('entitlements')
+      .select('is_active, trial_ends_at, current_period_end')
+      .eq('user_id', session.user.id)
+      .maybeSingle();
+    if (error) { console.warn('fetchEntitlement query failed', error); return null; }
+    return {
+      isActive:         !!data?.is_active,
+      trialEndsAt:      data?.trial_ends_at      || null,
+      currentPeriodEnd: data?.current_period_end || null,
+    };
+  } catch (e) {
+    console.warn('fetchEntitlement failed', e);
+    return null;
+  }
+}
+
+// Server-side trial start — calls the start_trial RPC (idempotent).
+async function startTrialServer(productId) {
+  if (!supabase) throw new Error('Supabase not configured.');
+  const { data, error } = await supabase.rpc('start_trial', { p_product_id: productId });
+  if (error) { console.warn('start_trial RPC failed', error); throw error; }
+  return data;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -331,39 +565,23 @@ const BADGE_STORAGE_KEY  = '@handstandai_badges';
 // ─────────────────────────────────────────────────────────────────────────────
 // BADGES — definitions
 // ─────────────────────────────────────────────────────────────────────────────
+// A short, valuable badge set. Hidden from the user — they only see them as a
+// surprise pop-up the moment they unlock one. No checklist, no "1/26 earned"
+// counter. Each badge here represents a real handstand milestone, not a vanity
+// participation trophy.
 const BADGES = [
-  // Streak
-  { id: 'streak_3',    category: 'streak',   icon: '🔥',  title: 'First Flame',         description: 'Reach a 3-day training streak.',           xpReward: 50  },
-  { id: 'streak_7',    category: 'streak',   icon: '🔥',  title: 'Week Warrior',         description: 'Reach a 7-day training streak.',           xpReward: 100 },
-  { id: 'streak_30',   category: 'streak',   icon: '🔥',  title: 'Monthly Machine',      description: 'Reach a 30-day training streak.',          xpReward: 300 },
-  { id: 'streak_60',   category: 'streak',   icon: '💎',  title: 'Iron Will',            description: 'Reach a 60-day training streak.',          xpReward: 500 },
-  { id: 'streak_100',  category: 'streak',   icon: '👑',  title: 'Legend',               description: 'Reach a 100-day training streak.',         xpReward: 1000},
-  { id: 'streak_365',  category: 'streak',   icon: '⭐',  title: 'Unstoppable',          description: 'Reach a 365-day training streak.',         xpReward: 5000},
-  // Hold time
-  { id: 'hold_1',      category: 'hold',     icon: '⏱',  title: 'First Contact',        description: 'Hold a handstand for 1 second.',           xpReward: 25  },
-  { id: 'hold_5',      category: 'hold',     icon: '⏱',  title: '5 Seconds of Flight',  description: 'Hold a handstand for 5 seconds.',          xpReward: 50  },
-  { id: 'hold_10',     category: 'hold',     icon: '⏱',  title: '10 and Counting',      description: 'Hold a handstand for 10 seconds.',         xpReward: 100 },
-  { id: 'hold_30',     category: 'hold',     icon: '⏱',  title: 'Half Minute Hero',     description: 'Hold a handstand for 30 seconds.',         xpReward: 250 },
-  { id: 'hold_60',     category: 'hold',     icon: '⏱',  title: 'One Minute Master',    description: 'Hold a handstand for 60 seconds.',         xpReward: 500 },
-  // Level
-  { id: 'level_1',     category: 'level',    icon: '🌱',  title: 'Getting Started',      description: 'Complete Level 1.',                        xpReward: 100 },
-  { id: 'level_2',     category: 'level',    icon: '🔥',  title: 'Moving Up',            description: 'Complete Level 2.',                        xpReward: 200 },
-  { id: 'level_3',     category: 'level',    icon: '💪',  title: 'Intermediate',         description: 'Complete Level 3.',                        xpReward: 300 },
-  { id: 'level_4',     category: 'level',    icon: '⚡',  title: 'Advanced',             description: 'Complete Level 4.',                        xpReward: 500 },
-  { id: 'level_5',     category: 'level',    icon: '🏆',  title: 'Elite',                description: 'Complete Level 5.',                        xpReward: 1000},
-  // Practice sessions
-  { id: 'sessions_1',  category: 'practice', icon: '🎯',  title: 'First Session',        description: 'Complete your first training session.',    xpReward: 25  },
-  { id: 'sessions_25', category: 'practice', icon: '🎯',  title: 'Dedicated',            description: 'Complete 25 training sessions.',           xpReward: 150 },
-  { id: 'sessions_50', category: 'practice', icon: '🎯',  title: 'Committed',            description: 'Complete 50 training sessions.',           xpReward: 300 },
-  { id: 'sessions_100',category: 'practice', icon: '🎯',  title: 'Obsessed',             description: 'Complete 100 training sessions.',          xpReward: 750 },
-  { id: 'sessions_500',category: 'practice', icon: '🎯',  title: 'Master Practitioner',  description: 'Complete 500 training sessions.',          xpReward: 2500},
-  // Programs
-  { id: 'program_1',   category: 'program',  icon: '📋',  title: 'Program Complete',     description: 'Finish any weekly training program.',      xpReward: 500 },
-  { id: 'program_2',   category: 'program',  icon: '📋',  title: 'Double Down',          description: 'Finish 2 training programs.',              xpReward: 750 },
-  { id: 'program_3',   category: 'program',  icon: '📋',  title: 'Triple Threat',        description: 'Finish 3 training programs.',              xpReward: 1000},
-  // Special
-  { id: 'diagnosis',   category: 'special',  icon: '🎯',  title: 'Know Yourself',        description: 'Complete the Weakness Diagnosis quiz.',    xpReward: 75  },
-  { id: 'day_one',     category: 'special',  icon: '🌟',  title: 'Day One',              description: 'Complete the onboarding quiz.',            xpReward: 50  },
+  // Real strength milestones
+  { id: 'hold_5',       category: 'hold',     icon: '⏱',  title: 'Five Seconds of Flight', description: 'Hold a handstand for 5 seconds.',          xpReward: 100 },
+  { id: 'hold_30',      category: 'hold',     icon: '🏆',  title: 'Half-Minute Hero',       description: 'Hold a handstand for 30 seconds.',         xpReward: 500 },
+  { id: 'hold_60',      category: 'hold',     icon: '👑',  title: 'One-Minute Master',      description: 'Hold a handstand for 60 seconds.',         xpReward: 1000 },
+  // Streak commitment
+  { id: 'streak_7',     category: 'streak',   icon: '🔥',  title: 'Week Warrior',           description: 'Train 7 days in a row.',                   xpReward: 200 },
+  { id: 'streak_30',    category: 'streak',   icon: '💎',  title: 'Iron Will',              description: 'Train 30 days in a row.',                  xpReward: 750 },
+  // Skill threshold
+  { id: 'level_3',      category: 'level',    icon: '💪',  title: 'Real Handstand',         description: 'Reach Level 3 — your first true freestanding work.', xpReward: 500 },
+  { id: 'level_5',      category: 'level',    icon: '🌟',  title: 'Elite',                  description: 'Reach Level 5.',                           xpReward: 2000 },
+  // Deep commitment
+  { id: 'sessions_100', category: 'practice', icon: '🎯',  title: 'Hundred Club',           description: 'Complete 100 training sessions.',          xpReward: 1500 },
 ];
 
 // Standalone (no hook) streak computer used by _load() and StreakDetailModal.
@@ -624,29 +842,65 @@ const PurchaseContext = React.createContext(null);
 const DEFAULT_PURCHASE_STATE = { isPro: false, trialStartedAt: null, productId: null };
 
 function PurchaseProvider({ children }) {
+  // Local cache. The SERVER entitlement view is the source of truth — this is
+  // only used to render last-known-good UI before the server refresh resolves.
   const [proState,       setProState]       = useState(DEFAULT_PURCHASE_STATE);
   const [proLoaded,      setProLoaded]      = useState(false);
   const [paywallVisible, setPaywallVisible] = useState(false);
   const [paywallTrigger, setPaywallTrigger] = useState(null);
   const [purchaseLoading, setPurchaseLoading] = useState(false);
   const [sessionPaywallShown, setSessionPaywallShown] = useState(false);
+  const [paywallForced,  setPaywallForced]  = useState(false); // hard-gate mode
 
   useEffect(() => {
     (async () => {
+      // 1. Hydrate from cache for instant UI.
       try {
         const raw = await AsyncStorage.getItem(PURCHASE_KEY);
         if (raw) setProState({ ...DEFAULT_PURCHASE_STATE, ...JSON.parse(raw) });
-      } catch (_) {}
+      } catch (e) { console.warn('PurchaseProvider: cache load failed', e); }
+      // 2. Then verify with the server — this is what actually gates Pro.
+      const ent = await fetchEntitlement();
+      if (ent) {
+        const next = {
+          isPro:          !!ent.isActive,
+          trialStartedAt: ent.trialEndsAt
+            ? new Date(new Date(ent.trialEndsAt).getTime() - TRIAL_DAYS * 86400000).toISOString()
+            : null,
+          productId:      proState.productId,
+        };
+        setProState(next);
+        try { await AsyncStorage.setItem(PURCHASE_KEY, JSON.stringify(next)); }
+        catch (e) { console.warn('PurchaseProvider: cache save failed', e); }
+      }
       setProLoaded(true);
     })();
   }, []);
 
   const _save = async (next) => {
     setProState(next);
-    try { await AsyncStorage.setItem(PURCHASE_KEY, JSON.stringify(next)); } catch (_) {}
+    try { await AsyncStorage.setItem(PURCHASE_KEY, JSON.stringify(next)); }
+    catch (e) { console.warn('PurchaseProvider: _save failed', e); }
+  };
+
+  // Re-fetch from server (called after a purchase, or when the user explicitly restores).
+  const refreshEntitlement = async () => {
+    const ent = await fetchEntitlement();
+    if (!ent) return null;
+    const next = {
+      isPro:          !!ent.isActive,
+      trialStartedAt: ent.trialEndsAt
+        ? new Date(new Date(ent.trialEndsAt).getTime() - TRIAL_DAYS * 86400000).toISOString()
+        : null,
+      productId:      proState.productId,
+    };
+    await _save(next);
+    return ent;
   };
 
   // ── Derived access helpers ─────────────────────────────────────────────────
+  // NOTE: these are CLIENT-SIDE conveniences for UI gating only. Every protected
+  // server endpoint must independently verify the JWT + entitlement.
   const isPro = () => proState.isPro;
 
   const isInTrial = () => {
@@ -663,24 +917,48 @@ function PurchaseProvider({ children }) {
 
   const subscriptionExpiresAt = () => null; // populated by real payments later
 
-  const canAccessLevel     = (levelId) => levelId <= FREE_MAX_LEVEL || isPro();
-  const canPostToCommunity = () => isPro();
+  const hasActiveEntitlement = () => isPro() || isInTrial();
+  // Trial users get full access — gate on entitlement, not strict isPro.
+  const canAccessLevel     = (levelId) => levelId <= FREE_MAX_LEVEL || hasActiveEntitlement();
+  const canPostToCommunity = () => hasActiveEntitlement();
+  const trialExpired = () => !!proState.trialStartedAt && !isInTrial() && !isPro();
 
-  // ── Purchase flow (beta mock) ──────────────────────────────────────────────
+  // ── Purchase flow (beta mock) — calls the start_trial RPC server-side ─────
+  // During onboarding the user hits this paywall BEFORE signing up, so no
+  // Supabase session exists yet. In that case we fall back to a local
+  // cache-only trial and mark it pending; AuthProvider syncs to the server
+  // (via start_trial RPC) on next successful sign-in.
+  const PENDING_TRIAL_KEY = '@handstandai_pending_trial';
+
   const purchaseSubscription = async (productId) => {
     setPurchaseLoading(true);
-    // Simulate a short network delay so the loading spinner shows
-    await new Promise(r => setTimeout(r, 800));
     try {
-      // Both monthly and annual now include a 7-day free trial
-      const trialStartedAt = new Date().toISOString();
-      await _save({ isPro: true, trialStartedAt, productId });
+      let session = null;
+      if (supabase) {
+        try { session = (await supabase.auth.getSession()).data.session; }
+        catch (e) { console.warn('purchaseSubscription: getSession failed', e); }
+      }
+
+      if (session) {
+        // Authenticated path — server is the source of truth.
+        await startTrialServer(productId);
+        await refreshEntitlement();
+      } else {
+        // Pre-signup path — record locally and queue for sync.
+        const trialStartedAt = new Date().toISOString();
+        await _save({ isPro: true, trialStartedAt, productId });
+        try { await AsyncStorage.setItem(PENDING_TRIAL_KEY, productId); }
+        catch (e) { console.warn('purchaseSubscription: queue pending trial failed', e); }
+      }
+
       setPaywallVisible(false);
-      Alert.alert(
-        '🎉 Welcome to Pro!',
-        'Payment coming soon! Enjoy full Pro access for free during beta.',
-      );
+      setPaywallForced(false);
+      Alert.alert('🎉 Welcome to Pro!', 'Your 7-day free trial has started. Enjoy full Pro access.');
       return true;
+    } catch (e) {
+      console.warn('purchaseSubscription failed', e);
+      Alert.alert('Could not start trial', friendlyAuthError(e));
+      return false;
     } finally {
       setPurchaseLoading(false);
     }
@@ -688,9 +966,9 @@ function PurchaseProvider({ children }) {
 
   const restorePurchases = async () => {
     setPurchaseLoading(true);
-    await new Promise(r => setTimeout(r, 800));
+    const ent = await refreshEntitlement();
     setPurchaseLoading(false);
-    if (proState.isPro) {
+    if (ent?.isActive) {
       Alert.alert('Restore Complete', 'Your Pro access has been restored.');
     } else {
       Alert.alert('Nothing to Restore', 'No active subscription found on this account.');
@@ -700,20 +978,32 @@ function PurchaseProvider({ children }) {
   const showPaywall = (reason = 'general', featureLabel = '') => {
     if (sessionPaywallShown) return;
     setPaywallTrigger({ reason, featureLabel });
+    setPaywallForced(false);
     setPaywallVisible(true);
     setSessionPaywallShown(true);
   };
 
-  const hidePaywall = () => setPaywallVisible(false);
+  // Hard-gate paywall — no close button, no backdrop dismiss. Used as a stage.
+  const showForcedPaywall = (reason = 'gate') => {
+    setPaywallTrigger({ reason, featureLabel: '' });
+    setPaywallForced(true);
+    setPaywallVisible(true);
+  };
+
+  const hidePaywall = () => {
+    if (paywallForced) return; // can't dismiss when forced
+    setPaywallVisible(false);
+  };
 
   return (
     <PurchaseContext.Provider value={{
       proLoaded,
       isPro, isInTrial, trialDaysRemaining, subscriptionExpiresAt,
+      hasActiveEntitlement, trialExpired,
       canAccessLevel, canPostToCommunity,
       purchaseSubscription, restorePurchases,
-      showPaywall, hidePaywall,
-      paywallVisible, paywallTrigger, purchaseLoading,
+      showPaywall, showForcedPaywall, hidePaywall,
+      paywallVisible, paywallForced, paywallTrigger, purchaseLoading,
       FREE_MAX_LEVEL,
     }}>
       {children}
@@ -725,14 +1015,77 @@ function PurchaseProvider({ children }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // PAYWALL MODAL
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// PaywallGateScreen — renders a solid branded background and triggers the
+// forced (non-dismissible) paywall modal on mount. When the user acquires an
+// entitlement (trial or Pro) we call onCleared to advance the stage machine.
+// ─────────────────────────────────────────────────────────────────────────────
+function PaywallGateScreen({ onCleared }) {
+  const { showForcedPaywall, hasActiveEntitlement } = useContext(PurchaseContext);
+
+  // Fire the forced paywall once on mount.
+  useEffect(() => {
+    const t = setTimeout(() => showForcedPaywall('post_quiz_gate'), 60);
+    return () => clearTimeout(t);
+  }, []);
+
+  // Watch for entitlement activation and advance the stage.
+  useEffect(() => {
+    if (hasActiveEntitlement && hasActiveEntitlement()) {
+      onCleared && onCleared();
+    }
+  });
+
+  return (
+    <View style={{ flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center' }}>
+      <HandstandFigure size={120} />
+    </View>
+  );
+}
+
 function PaywallModal() {
   const {
-    paywallVisible, paywallTrigger, hidePaywall,
+    paywallVisible, paywallTrigger, paywallForced, hidePaywall,
     purchaseSubscription, restorePurchases, purchaseLoading,
+    trialExpired,
   } = useContext(PurchaseContext);
   const [selected, setSelected] = useState('pro_annual');
+  const [userName, setUserName] = useState('');
+  const [userLevel, setUserLevel] = useState(null);
+  const [userGoal, setUserGoal] = useState(null);
+  const [userTargetDate, setUserTargetDate] = useState(null);
   const fadeAnim  = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(60)).current;
+
+  // Load personalization data whenever the paywall becomes visible
+  useEffect(() => {
+    if (!paywallVisible) return;
+    (async () => {
+      try {
+        // QUIZ_LEVEL_KEY + target_date are non-PII → AsyncStorage.
+        // USER_NAME_KEY + QUIZ_ANSWERS_KEY are PII → SecureStore.
+        const pairs = await AsyncStorage.multiGet([
+          QUIZ_LEVEL_KEY,
+          '@handstandai_target_date',
+        ]);
+        const map = Object.fromEntries(pairs);
+        const [secureName, secureAnswers] = await Promise.all([
+          sensitiveStore.get(USER_NAME_KEY),
+          sensitiveStore.get(QUIZ_ANSWERS_KEY),
+        ]);
+        setUserName(secureName || '');
+        setUserLevel(map[QUIZ_LEVEL_KEY] ? Number(map[QUIZ_LEVEL_KEY]) : null);
+        if (secureAnswers) {
+          try { const a = JSON.parse(secureAnswers); setUserGoal(a[13] || null); }
+          catch (e) { console.warn('Paywall: parse quiz answers failed', e); }
+        }
+        if (map['@handstandai_target_date']) {
+          const d = new Date(map['@handstandai_target_date']);
+          if (!isNaN(d.getTime())) setUserTargetDate(d);
+        }
+      } catch (_) {}
+    })();
+  }, [paywallVisible]);
 
   useEffect(() => {
     if (paywallVisible) {
@@ -746,134 +1099,149 @@ function PaywallModal() {
     }
   }, [paywallVisible]);
 
+  // Derived: personalized headline text pulled from quiz answers
+  const goalLabel = userGoal || '30-second freestanding hold';
+  const personalizedHeadline = userName
+    ? `${userName}, your Level ${userLevel ?? '—'} plan to a ${goalLabel}.`
+    : `Your Level ${userLevel ?? '—'} plan to a ${goalLabel}.`;
+  const targetDateStr = userTargetDate
+    ? userTargetDate.toLocaleDateString(undefined, { month: 'long', day: 'numeric' })
+    : null;
+
   const PRO_FEATURES = [
-    { icon: 'videocam-outline',    text: 'AI Form Analysis & Coaching' },
-    { icon: 'infinite-outline',    text: 'Unlimited Level Access' },
-    { icon: 'calendar-outline',    text: 'Weekly Training Plans' },
-    { icon: 'stats-chart-outline', text: 'Progress Tracking & Charts' },
-    { icon: 'trophy-outline',      text: 'Achievement Badges' },
+    'Personalized plan built around your answers',
+    'AI form analysis on every rep',
+    'Full level library — no drills locked',
+    'Adaptive weekly training calendar',
+    'Progress charts, streak protection, and badges',
   ];
 
   const handlePurchase = async () => {
     await purchaseSubscription(selected);
   };
 
+  const expired = trialExpired && trialExpired();
+  const goalText = userGoal ? userGoal.toLowerCase() : 'freestanding handstand';
+  const heroHeadline = expired
+    ? 'Keep your plan. Keep the progress.'
+    : userName
+      ? `${userName}, your ${goalText} is ${targetDateStr ? targetDateStr : 'weeks'} away.`
+      : `Your ${goalText} is ${targetDateStr ? targetDateStr : 'weeks'} away.`;
+
   return (
-    <Modal visible={paywallVisible} transparent animationType="none" onRequestClose={hidePaywall}>
+    <Modal visible={paywallVisible} transparent animationType="none" onRequestClose={paywallForced ? () => {} : hidePaywall}>
       <Animated.View style={[pw.overlay, { opacity: fadeAnim }]}>
         <Animated.View style={[pw.sheet, { transform: [{ translateY: slideAnim }] }]}>
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 }}>
-            {/* Close */}
-            <TouchableOpacity style={pw.closeBtn} onPress={hidePaywall} activeOpacity={0.7}>
-              <Ionicons name="close" size={22} color={C.textMuted} />
-            </TouchableOpacity>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 28 }}>
+            {/* Close — hidden when forced (hard gate) */}
+            {!paywallForced && (
+              <TouchableOpacity style={pw.closeBtn} onPress={hidePaywall} activeOpacity={0.7}>
+                <Ionicons name="close" size={20} color={C.textMuted} />
+              </TouchableOpacity>
+            )}
 
             {/* Hero */}
             <View style={pw.hero}>
               <View style={pw.heroIconCircle}>
-                <Ionicons name="star" size={64} color={C.accent} />
+                <HandstandFigure size={72} />
               </View>
-              <Text style={[T.h1, { textAlign: 'center', marginTop: S.md, fontSize: 36, fontWeight: '900', textTransform: 'uppercase' }]}>GO PRO</Text>
-              <Text style={[T.label, { color: C.textSub, textAlign: 'center', marginTop: S.xs }]}>UNLOCK YOUR FULL POTENTIAL</Text>
-              {paywallTrigger?.reason === 'level_lock' && (
-                <View style={pw.triggerBadge}>
-                  <Text style={[T.cap, { color: C.accent }]}>🔒 {paywallTrigger.featureLabel}</Text>
-                </View>
-              )}
-              {paywallTrigger?.reason === 'ai_limit' && (
-                <View style={pw.triggerBadge}>
-                  <Text style={[T.cap, { color: C.accent }]}>🤖 {paywallTrigger.featureLabel}</Text>
-                </View>
-              )}
-              {paywallTrigger?.reason === 'level2_complete' && (
-                <View style={pw.triggerBadge}>
-                  <Text style={[T.cap, { color: C.accent }]}>🎉 Ready for the next level?</Text>
-                </View>
-              )}
+              <Text style={pw.eyebrow}>
+                {expired ? 'YOUR FREE TRIAL ENDED' : `LEVEL ${userLevel ?? '—'} · PERSONAL PLAN`}
+              </Text>
+              <Text style={pw.heroHeadline}>{heroHeadline}</Text>
+              <Text style={pw.heroSub}>
+                {expired
+                  ? 'Continue with Pro to pick up exactly where you left off.'
+                  : 'Start today — pay nothing for 7 days.'}
+              </Text>
             </View>
 
-            {/* Features list */}
+            {/* Feature list — clean, one lime dot per line */}
             <View style={pw.featureList}>
               {PRO_FEATURES.map(f => (
-                <View key={f.text} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-                  {/* lime check circle */}
-                  <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' }}>
-                    <Ionicons name="checkmark" size={13} color={C.black} />
+                <View key={f} style={pw.featureRow2}>
+                  <View style={pw.featureDot}>
+                    <Ionicons name="checkmark" size={12} color={C.black} />
                   </View>
-                  {/* feature icon */}
-                  <Ionicons name={f.icon} size={16} color={C.accent} />
-                  {/* text */}
-                  <Text style={{ flex: 1, fontSize: 14, fontWeight: '500', color: C.white }}>{f.text}</Text>
+                  <Text style={pw.featureText}>{f}</Text>
                 </View>
               ))}
             </View>
 
-            {/* Plan selector */}
-            <View style={pw.planRow}>
-              {/* Annual — best value */}
+            {/* Plans — annual prominent, monthly secondary */}
+            <View style={pw.planStack}>
+              {/* Annual — the recommended one */}
               <TouchableOpacity
-                style={[pw.planCard, selected === 'pro_annual' && pw.planCardSelected]}
+                style={[pw.planAnnual, selected === 'pro_annual' && pw.planAnnualSelected]}
                 onPress={() => setSelected('pro_annual')}
-                activeOpacity={0.85}
+                activeOpacity={0.9}
               >
-                <View style={pw.bestValueBadge}>
-                  <Text style={pw.bestValueText}>BEST VALUE · 50% OFF</Text>
+                <View style={pw.mostPopularPill}>
+                  <Text style={pw.mostPopularText}>MOST POPULAR · SAVE 50%</Text>
                 </View>
-                <Text style={[T.num, { color: selected === 'pro_annual' ? C.accent : C.text, fontSize: 26, fontWeight: '900' }]}>$59.99</Text>
-                <Text style={[T.cap, { color: C.textMuted }]}>per year</Text>
-                <Text style={[T.small, { color: C.accent, marginTop: 4, fontWeight: '700' }]}>= $5.00/mo</Text>
-                <View style={pw.trialBadge}>
-                  <Text style={pw.trialText}>7-DAY FREE TRIAL</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+                  <View>
+                    <Text style={pw.planName}>Annual</Text>
+                    <Text style={pw.planSub}>$5.00/mo · billed yearly</Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={pw.planPrice}>$59.99</Text>
+                    <Text style={pw.planPriceSub}>/year</Text>
+                  </View>
                 </View>
               </TouchableOpacity>
 
-              {/* Monthly */}
+              {/* Monthly — smaller alternative */}
               <TouchableOpacity
-                style={[pw.planCard, selected === 'pro_monthly' && pw.planCardSelected]}
+                style={[pw.planMonthly, selected === 'pro_monthly' && pw.planMonthlySelected]}
                 onPress={() => setSelected('pro_monthly')}
-                activeOpacity={0.85}
+                activeOpacity={0.9}
               >
-                <View style={{ height: 20 }} />
-                <Text style={[T.num, { color: selected === 'pro_monthly' ? C.accent : C.text, fontSize: 26, fontWeight: '900' }]}>$9.99</Text>
-                <Text style={[T.cap, { color: C.textMuted }]}>per month</Text>
-                <Text style={[T.small, { color: C.textMuted, marginTop: 4 }]}>cancel anytime</Text>
-                <View style={pw.trialBadge}>
-                  <Text style={pw.trialText}>7-DAY FREE TRIAL</Text>
+                <View>
+                  <Text style={pw.planName}>Monthly</Text>
+                  <Text style={pw.planSub}>cancel anytime</Text>
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={pw.planPrice}>$9.99</Text>
+                  <Text style={pw.planPriceSub}>/month</Text>
                 </View>
               </TouchableOpacity>
             </View>
-
-            {/* Trial notice — shown for both plans */}
-            <Text style={[T.small, { color: C.textMuted, textAlign: 'center', marginHorizontal: S.lg, marginTop: S.sm, lineHeight: 18 }]}>
-              Start your 7-day free trial today. No charge until the trial ends. Cancel anytime before the trial ends and you won't be charged.
-            </Text>
 
             {/* CTA */}
             <TouchableOpacity
               style={[pw.ctaBtn, purchaseLoading && { opacity: 0.7 }]}
               onPress={handlePurchase}
-              activeOpacity={0.85}
+              activeOpacity={0.9}
               disabled={purchaseLoading}
             >
               <LinearGradient colors={G.accent} style={pw.ctaGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
                 {purchaseLoading
                   ? <ActivityIndicator color={C.black} />
-                  : <Text style={[T.h4, { color: C.black, fontWeight: '900', textTransform: 'uppercase' }]}>Start Free Trial</Text>
+                  : <Text style={pw.ctaText}>Start my 7-day free trial</Text>
                 }
               </LinearGradient>
             </TouchableOpacity>
 
-            {/* Restore + Terms */}
-            <TouchableOpacity style={{ alignItems: 'center', paddingVertical: S.sm }} onPress={restorePurchases} activeOpacity={0.7}>
-              <Text style={[T.small, { color: C.textMuted }]}>Restore Purchases</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={{ alignItems: 'center', paddingBottom: S.sm }} activeOpacity={0.7}>
-              <Text style={[T.small, { color: C.textMuted }]}>Terms &amp; Privacy</Text>
-            </TouchableOpacity>
-
-            <Text style={[T.small, { color: C.textMuted, textAlign: 'center', marginHorizontal: S.xl, lineHeight: 16 }]}>
-              Subscriptions automatically renew. Manage or cancel in your App Store account settings.
+            {/* Trust line — one friendly row, no double disclaimers */}
+            <Text style={pw.trustLine}>
+              $0 today · reminded 2 days before trial ends · cancel anytime
             </Text>
+
+            {/* Subtle links */}
+            <View style={pw.footerLinks}>
+              <TouchableOpacity onPress={restorePurchases} activeOpacity={0.6}>
+                <Text style={pw.footerLink}>Restore</Text>
+              </TouchableOpacity>
+              <Text style={pw.footerDot}>·</Text>
+              <TouchableOpacity activeOpacity={0.6}>
+                <Text style={pw.footerLink}>Terms</Text>
+              </TouchableOpacity>
+              <Text style={pw.footerDot}>·</Text>
+              <TouchableOpacity activeOpacity={0.6}>
+                <Text style={pw.footerLink}>Privacy</Text>
+              </TouchableOpacity>
+            </View>
           </ScrollView>
         </Animated.View>
       </Animated.View>
@@ -882,24 +1250,42 @@ function PaywallModal() {
 }
 
 const pw = StyleSheet.create({
-  overlay:         { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'flex-end' },
-  sheet:           { backgroundColor: C.bgCard, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: height * 0.93, overflow: 'hidden' },
-  closeBtn:        { position: 'absolute', top: S.md, right: S.md, zIndex: 10, width: 32, height: 32, borderRadius: 16, backgroundColor: C.bgCardElevated, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.border },
-  hero:            { alignItems: 'center', paddingVertical: S.xl, paddingTop: S.xl + 8, paddingHorizontal: S.lg },
-  heroIconCircle:  { width: 100, height: 100, borderRadius: 50, backgroundColor: C.accentDim, borderWidth: 1, borderColor: C.accent + '44', alignItems: 'center', justifyContent: 'center', shadowColor: C.accent, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.4, shadowRadius: 20, elevation: 8 },
-  triggerBadge:    { backgroundColor: C.accentDim, paddingHorizontal: S.md, paddingVertical: S.xs, borderRadius: R.full, marginTop: S.sm, borderWidth: 1, borderColor: C.accent + '44' },
-  featureList:     { paddingHorizontal: S.lg, paddingTop: S.md },
-  featureRow:      { flexDirection: 'row', alignItems: 'center', gap: S.sm, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.border },
-  featureCheck:    { width: 24, height: 24, borderRadius: 12, backgroundColor: C.accentDim, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.accent + '44' },
-  planRow:         { flexDirection: 'row', gap: S.sm, paddingHorizontal: S.lg, marginTop: S.lg },
-  planCard:        { flex: 1, backgroundColor: C.bgCardElevated, borderRadius: R.xl, padding: S.md, alignItems: 'center', borderWidth: 2, borderColor: C.border },
-  planCardSelected:{ borderColor: C.accent, backgroundColor: C.accentDim },
-  bestValueBadge:  { backgroundColor: C.accent, borderRadius: R.full, paddingHorizontal: S.sm, paddingVertical: 3, marginBottom: S.xs },
-  bestValueText:   { fontSize: 8, fontWeight: '800', color: C.black, letterSpacing: 0.5 },
-  trialBadge:      { backgroundColor: C.accentDim, borderRadius: R.full, paddingHorizontal: S.sm, paddingVertical: 3, marginTop: S.xs, borderWidth: 1, borderColor: C.accent + '44' },
-  trialText:       { fontSize: 8, fontWeight: '800', color: C.accent, letterSpacing: 0.5 },
-  ctaBtn:          { marginHorizontal: S.lg, marginTop: S.lg, borderRadius: R.full, overflow: 'hidden', shadowColor: C.accent, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 6 },
+  overlay:         { flex: 1, backgroundColor: 'rgba(0,0,0,0.88)', justifyContent: 'flex-end' },
+  sheet:           { backgroundColor: C.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28, maxHeight: height * 0.94, overflow: 'hidden', borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, borderColor: C.accent + '22' },
+  closeBtn:        { position: 'absolute', top: 14, right: 14, zIndex: 10, width: 32, height: 32, borderRadius: 16, backgroundColor: C.bgCard, alignItems: 'center', justifyContent: 'center' },
+
+  hero:            { alignItems: 'center', paddingTop: 36, paddingBottom: 22, paddingHorizontal: 28 },
+  heroIconCircle:  { width: 110, height: 110, borderRadius: 55, alignItems: 'center', justifyContent: 'center' },
+  eyebrow:         { fontSize: 10, fontWeight: '800', color: C.accent, letterSpacing: 2, marginTop: 18 },
+  heroHeadline:    { fontSize: 24, lineHeight: 30, fontWeight: '800', color: C.text, textAlign: 'center', marginTop: 10, maxWidth: 320, letterSpacing: -0.3 },
+  heroSub:         { fontSize: 13, lineHeight: 19, color: C.textSub, textAlign: 'center', marginTop: 8, maxWidth: 300 },
+
+  featureList:     { paddingHorizontal: 28, paddingTop: 6, paddingBottom: 4 },
+  featureRow2:     { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 7 },
+  featureDot:      { width: 20, height: 20, borderRadius: 10, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' },
+  featureText:     { flex: 1, fontSize: 14, color: C.text, fontWeight: '500', lineHeight: 19 },
+
+  planStack:       { paddingHorizontal: 20, paddingTop: 18, gap: 10 },
+  planAnnual:      { borderRadius: 18, padding: 18, paddingTop: 20, backgroundColor: C.bgCard, borderWidth: 2, borderColor: C.border },
+  planAnnualSelected: { borderColor: C.accent, backgroundColor: C.accent + '10' },
+  planMonthly:     { borderRadius: 16, paddingHorizontal: 18, paddingVertical: 14, backgroundColor: C.bgCard, borderWidth: 1, borderColor: C.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  planMonthlySelected: { borderColor: C.accent },
+  mostPopularPill: { position: 'absolute', top: -10, left: 16, backgroundColor: C.accent, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
+  mostPopularText: { fontSize: 9, fontWeight: '900', color: C.black, letterSpacing: 0.7 },
+  planName:        { fontSize: 16, fontWeight: '800', color: C.text },
+  planSub:         { fontSize: 12, color: C.textMuted, marginTop: 2 },
+  planPrice:       { fontSize: 22, fontWeight: '900', color: C.text, letterSpacing: -0.5 },
+  planPriceSub:    { fontSize: 11, color: C.textMuted, marginTop: 1 },
+
+  ctaBtn:          { marginHorizontal: 20, marginTop: 18, borderRadius: 999, overflow: 'hidden', shadowColor: C.accent, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.35, shadowRadius: 16, elevation: 8 },
   ctaGrad:         { height: 56, alignItems: 'center', justifyContent: 'center' },
+  ctaText:         { fontSize: 16, fontWeight: '900', color: C.black, letterSpacing: 0.2 },
+
+  trustLine:       { fontSize: 11, color: C.textMuted, textAlign: 'center', marginTop: 12, marginHorizontal: 24, lineHeight: 16 },
+
+  footerLinks:     { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 14 },
+  footerLink:      { fontSize: 11, color: C.textMuted, fontWeight: '600' },
+  footerDot:       { fontSize: 11, color: C.textMuted },
 });
 
 const XP_PER_LEVEL = 500;
@@ -1463,14 +1849,141 @@ const USER_NAME_KEY      = 'user_name';
 const PreviewContext = React.createContext({ isPreview: false, triggerGate: () => {} });
 
 const QUIZ_QUESTIONS = [
-  { id: 0, question: 'Can you kick up to a wall handstand?',                 options: ['Yes', 'Sometimes', 'No'] },
-  { id: 1, question: 'How long can you hold against a wall?',                options: ['0 seconds', '5-15 seconds', '15-30 seconds', '30+ seconds'] },
-  { id: 2, question: 'Have you ever held a handstand away from the wall?',   options: ['Never', 'A second or two', '5+ seconds'] },
-  { id: 3, question: "What's your #1 problem right now?",                    options: ['I fall forward', 'I fall back', "I can't kick up", 'My wrists hurt', 'My shoulders are tight'] },
-  { id: 4, question: 'How many days per week can you train?',                options: ['2-3 days', '4-5 days', '6-7 days'] },
-  { id: 5, question: "What's your goal?",                                    options: ['10-second hold', '30-second hold', '1-minute hold', 'Press to handstand', 'Walking on hands'] },
-  { id: 6, question: 'Any injuries to watch out for?',                       options: ['Wrists', 'Shoulders', 'Back', 'None'] },
+  // Skill assessment (feeds assignLevel — keep at start, indices 0-2 unchanged)
+  { id: 0,  question: 'Can you kick up to a wall handstand?',                       options: ['Yes', 'Sometimes', 'No'] },
+  { id: 1,  question: 'When you hold against the wall, how long do you last?',     options: ['0 seconds', '5-15 seconds', '15-30 seconds', '30+ seconds'] },
+  { id: 2,  question: 'Ever balanced away from the wall — even for a moment?',     options: ['Never', 'A second or two', '5+ seconds'] },
+  // Body & physical stats — personalizes plan and paywall copy
+  { id: 3,  question: 'What is your age range?',                                    options: ['Under 18', '18-29', '30-44', '45-59', '60+'] },
+  { id: 4,  question: 'What is your height?',                                       options: ["Under 5'4\"", "5'4\" – 5'9\"", "5'10\" – 6'1\"", "6'2\"+"] },
+  { id: 5,  question: 'How would you describe your body type?',                     options: ['Lean', 'Athletic', 'Average', 'Heavier'] },
+  // Frustrations (multi) — existing Q3, now Q6
+  { id: 6,  question: "What's frustrating you the most right now?",                 options: ['I fall forward', 'I fall back', "I can't kick up", 'My wrists hurt', 'My shoulders are tight', 'Nothing — I feel solid'] },
+  // Training availability
+  { id: 7,  question: 'How many days a week can you realistically train?',          options: ['2-3 days', '4-5 days', '6-7 days'] },
+  { id: 8,  question: "When's your best time to train?",                            options: ['Morning', 'Midday', 'Evening', 'Whenever I can'] },
+  { id: 9,  question: 'How long can each session realistically be?',                options: ['Under 10 min', '10-20 min', '20-30 min', '30+ min'] },
+  // Fears & mental blocks — drives encouragement copy
+  { id: 10, question: 'How do you feel about being upside down?',                   options: ['Excited', 'Neutral', 'Nervous', 'Scared'] },
+  { id: 11, question: "What's been stopping you the most?",                         options: ['Fear of falling', 'Fear of looking silly', "Don't know how", "Can't stay consistent", 'Nothing'] },
+  { id: 12, question: 'How confident do you feel in your balance right now?',       options: ['None', 'A little', 'Moderate', 'High'] },
+  // Goal + injuries (existing Q5, Q6 — now Q13, Q14)
+  { id: 13, question: "What would make you proudest to achieve?",                   options: ['10-second hold', '30-second hold', '1-minute hold', 'Press to handstand', 'Walking on hands'] },
+  { id: 14, question: 'Anything we should train around?',                           options: ['Wrists', 'Shoulders', 'Back', 'None'] },
 ];
+
+// Maps each quiz answer to a short "unlock" message shown in real-time
+// during the quiz — demonstrates value and personalization at every step.
+const QUIZ_UNLOCKS = {
+  0: {
+    'Yes':            'Freestanding kick-up drills',
+    'Sometimes':      'Kick-up consistency training',
+    'No':             'Wall walk foundation progressions',
+  },
+  1: {
+    '0 seconds':      '3-week wall endurance build',
+    '5-15 seconds':   '20-second wall hold target',
+    '15-30 seconds':  'Freestanding bail technique',
+    '30+ seconds':    'Advanced shape drills (hollow body)',
+  },
+  2: {
+    'Never':             'Balance-without-wall primer',
+    'A second or two':   'Micro-balance corrections',
+    '5+ seconds':        'Extended freestanding workouts',
+  },
+  3: { // Age
+    'Under 18': 'Youth-paced joint-safe progressions',
+    '18-29':    'Max-intensity progression track',
+    '30-44':    'Balanced intensity + recovery',
+    '45-59':    'Age-aware joint protection prep',
+    '60+':      'Gentle approach with extra warmup',
+  },
+  4: { // Height
+    "Under 5'4\"":    'Shorter-leverage balance tuning',
+    "5'4\" – 5'9\"":  'Standard leverage progressions',
+    "5'10\" – 6'1\"": 'Extended-frame balance work',
+    "6'2\"+":         'Tall-frame stability coaching',
+  },
+  5: { // Body type
+    'Lean':     'Endurance-biased plan',
+    'Athletic': 'Strength + skill blend',
+    'Average':  'Balanced strength & mobility build',
+    'Heavier':  'Shoulder-friendly shape drills prioritized',
+  },
+  6: { // Frustrations (multi) — was idx 3
+    'I fall forward':          'Forward-fall corrections',
+    'I fall back':             'Back-fall recovery (pirouette out)',
+    "I can't kick up":         'Kick-up timing drills',
+    'My wrists hurt':          '3-min wrist prep routine',
+    'My shoulders are tight':  'Shoulder mobility warmup',
+    'Nothing — I feel solid':  'Confidence track: straight to hold progressions',
+  },
+  7: { // Days/week — was idx 4
+    '2-3 days': 'Plan sized: 3 sessions / week',
+    '4-5 days': 'Plan sized: 5 sessions / week',
+    '6-7 days': 'Plan sized: Daily 15-min sessions',
+  },
+  8: { // Time of day
+    'Morning':       'Morning mobility-led sessions',
+    'Midday':        'Midday quick-hit sessions',
+    'Evening':       'Evening wind-down training',
+    'Whenever I can':'Flexible scheduling mode',
+  },
+  9: { // Session length
+    'Under 10 min': 'Micro-session plan (<10 min)',
+    '10-20 min':    'Compact 15-min sessions',
+    '20-30 min':    'Full 25-min sessions',
+    '30+ min':      'Deep 30+ min workouts',
+  },
+  10: { // Upside-down feeling
+    'Excited': 'Advanced confidence track',
+    'Neutral': 'Progressive balance build',
+    'Nervous': 'Fear-graded kick-up progressions',
+    'Scared':  'Wall-based safety-first progressions',
+  },
+  11: { // What stops you
+    'Fear of falling':        'Confidence track: safe bail technique',
+    'Fear of looking silly':  'Private-practice friendly program',
+    "Don't know how":         'Step-by-step technique library',
+    "Can't stay consistent":  'Streak coaching + reminders',
+    'Nothing':                'Focused skill-only track',
+  },
+  12: { // Confidence
+    'None':     'Stability-first foundation',
+    'A little': 'Confidence-building progressions',
+    'Moderate': 'Intermediate balance drills',
+    'High':     'Advanced freestanding work',
+  },
+  13: { // Goal — was idx 5
+    '10-second hold':      'Goal locked: 10-sec in 4 weeks',
+    '30-second hold':      'Goal locked: 30-sec in 8 weeks',
+    '1-minute hold':       'Goal locked: 60-sec in 16 weeks',
+    'Press to handstand':  'Goal locked: Press progression',
+    'Walking on hands':    'Goal locked: Hand-walking path',
+  },
+  14: { // Injuries — was idx 6
+    'Wrists':    'Plan will avoid high-impact wrist work',
+    'Shoulders': 'Plan will favor shoulder-friendly shapes',
+    'Back':      'Plan will avoid heavy back extension',
+    'None':      'Full drill library available to you',
+  },
+};
+
+// Returns an ordered list of unlock strings derived from the answers given so far.
+function deriveUnlocks(answers) {
+  const out = [];
+  for (let i = 0; i < answers.length; i++) {
+    const ans = answers[i];
+    const map = QUIZ_UNLOCKS[i];
+    if (!map) continue;
+    if (Array.isArray(ans)) {
+      ans.forEach(opt => { if (map[opt]) out.push(map[opt]); });
+    } else if (ans && map[ans]) {
+      out.push(map[ans]);
+    }
+  }
+  return out;
+}
 
 function assignLevel(answers) {
   const q1 = answers[0]; // kick up?
@@ -1567,24 +2080,29 @@ async function processAIQueue(onResult) {
   if (queue.length === 0) return;
   const remaining = [];
   for (const item of queue) {
+    const controller = new AbortController();
+    const timeoutId  = setTimeout(() => controller.abort(), 15000);
     try {
-      const res = await fetch(AI_CHECK_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: item.imageBase64 }),
-      });
+      const res = await aiCheckFetch(item.imageBase64, { signal: controller.signal });
       const data = await res.json();
       const text = data?.content?.[0]?.text || '';
       const match = text.match(/\{[\s\S]*\}/);
       if (match) {
         const result = JSON.parse(match[0]);
         if (onResult) onResult(item.submissionId, result);
+      } else {
+        // Server replied but no usable content — drop from queue to avoid loops.
+        console.warn('processAIQueue: empty/invalid response', data);
       }
-    } catch (_) {
+    } catch (e) {
+      console.warn('processAIQueue: item failed', e?.message || e);
       remaining.push(item);
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
-  try { await AsyncStorage.setItem(AI_QUEUE_KEY, JSON.stringify(remaining)); } catch (_) {}
+  try { await AsyncStorage.setItem(AI_QUEUE_KEY, JSON.stringify(remaining)); }
+  catch (e) { console.warn('processAIQueue: save remaining failed', e); }
 }
 
 const DEFAULT_NOTIF_SETTINGS = {
@@ -1756,6 +2274,8 @@ const DEFAULT_PROGRESS = {
   lastFreezeReset:           null,
   freezeUsedDates:           [],  // DateString[] of days freeze was auto-consumed
   notifiedStreakMilestones:  [],  // streak numbers we already celebrated
+  lastSeenStreak:            0,   // last streak count the user saw celebrated via daily pop
+  inbox:                     [],  // in-app notifications: [{ id, type, title, body, date, read }]
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1821,50 +2341,24 @@ function BadgeProvider({ children }) {
       }
     };
 
-    // Streak badges
-    if (streak >= 3)   tryEarn('streak_3');
+    // Streak badges (the meaningful ones — week + month commitment)
     if (streak >= 7)   tryEarn('streak_7');
     if (streak >= 30)  tryEarn('streak_30');
-    if (streak >= 60)  tryEarn('streak_60');
-    if (streak >= 100) tryEarn('streak_100');
-    if (streak >= 365) tryEarn('streak_365');
 
-    // Session badges
-    if (sessions >= 1)   tryEarn('sessions_1');
-    if (sessions >= 25)  tryEarn('sessions_25');
-    if (sessions >= 50)  tryEarn('sessions_50');
+    // Session badge — deep commitment marker
     if (sessions >= 100) tryEarn('sessions_100');
-    if (sessions >= 500) tryEarn('sessions_500');
 
-    // Level badges
-    if (completedLvl.includes(1)) tryEarn('level_1');
-    if (completedLvl.includes(2)) tryEarn('level_2');
+    // Level badges — only the real-skill thresholds
     if (completedLvl.includes(3)) tryEarn('level_3');
-    if (completedLvl.includes(4)) tryEarn('level_4');
     if (completedLvl.includes(5)) tryEarn('level_5');
 
-    // Hold time badges (from voice timer history or provided best)
+    // Hold time badges — actual handstand strength milestones
     if (voiceHistory !== null) {
       const best = voiceHistory.length ? Math.max(...voiceHistory.map(h => h.duration)) : 0;
-      if (best >= 1)  tryEarn('hold_1');
       if (best >= 5)  tryEarn('hold_5');
-      if (best >= 10) tryEarn('hold_10');
       if (best >= 30) tryEarn('hold_30');
       if (best >= 60) tryEarn('hold_60');
     }
-
-    // Program badges
-    if (programsCompleted !== null) {
-      if (programsCompleted >= 1) tryEarn('program_1');
-      if (programsCompleted >= 2) tryEarn('program_2');
-      if (programsCompleted >= 3) tryEarn('program_3');
-    }
-
-    // Special
-    if (diagnosisDone) tryEarn('diagnosis');
-
-    // Day One — onboarding done = user has userName
-    if (progress.userName) tryEarn('day_one');
 
     if (nowEarned.length > 0) {
       const newIds = [...currentSet];
@@ -1959,6 +2453,13 @@ async function _getAuthUserId() {
 async function _syncProgressToCloud(p, userId) {
   if (!userId) return;
   try {
+    // Read quiz answers from SecureStore so the server can recompute level authoritatively
+    let quizAnswers = null;
+    try {
+      const raw = await sensitiveStore.get(QUIZ_ANSWERS_KEY);
+      if (raw) quizAnswers = JSON.parse(raw);
+    } catch (_) {}
+
     await supabase.from('user_progress').upsert({
       user_id:                  userId,
       current_level:            p.currentLevel,
@@ -1970,6 +2471,7 @@ async function _syncProgressToCloud(p, userId) {
       daily_challenge_completed: p.dailyChallengeCompleted,
       daily_challenge_date:     p.dailyChallengeDate,
       updated_at:               new Date().toISOString(),
+      ...(quizAnswers !== null && { quiz_answers: quizAnswers }),
     }, { onConflict: 'user_id' });
   } catch (_) {}
 }
@@ -1993,7 +2495,7 @@ async function _syncSessionToCloud(sub, userId) {
       form_score:       sub.formScore    ?? null,
       status:           sub.status      ?? 'pending',
     }, { onConflict: 'local_id' });
-  } catch (_) {}
+  } catch (e) { console.warn('_syncSessionToCloud failed', e); }
 }
 
 // Pull cloud progress and merge: cloud wins on numeric fields, local wins on submissions array
@@ -2230,8 +2732,8 @@ function UserProgressProvider({ children, onReset }) {
     });
     // Sync this specific session to cloud (fire-and-forget)
     _getAuthUserId().then(userId => {
-      if (userId) _syncSessionToCloud(entry, userId).catch(() => {});
-    }).catch(() => {});
+      if (userId) _syncSessionToCloud(entry, userId).catch(e => console.warn('syncSession failed', e));
+    }).catch(e => console.warn('getAuthUserId failed', e));
     // User trained today — silence tonight's "don't break streak" reminder
     cancelStreakReminderToday();
     return entry;
@@ -2338,6 +2840,58 @@ function UserProgressProvider({ children, onReset }) {
   const STREAK_MILESTONE_XP = { 7: 100, 14: 200, 30: 500, 60: 1000, 100: 2000 };
 
   const [streakCelebration, setStreakCelebration] = useState(null); // { streak, xp }
+  const [streakDayPop, setStreakDayPop] = useState(null); // { streak } — small daily pop
+
+  const pushInbox = useCallback((item) => {
+    const entry = {
+      id: item.id || `${item.type || 'msg'}_${Date.now()}`,
+      type: item.type || 'info',
+      title: item.title,
+      body: item.body || '',
+      date: new Date().toISOString(),
+      read: false,
+    };
+    setProgress(prev => {
+      // Dedupe by id (don't re-notify for the same milestone twice)
+      if ((prev.inbox || []).some(n => n.id === entry.id)) return prev;
+      const next = { ...prev, inbox: [entry, ...(prev.inbox || [])].slice(0, 40) };
+      _save(next);
+      return next;
+    });
+  }, []);
+
+  const markInboxRead = useCallback(() => {
+    setProgress(prev => {
+      if (!(prev.inbox || []).some(n => !n.read)) return prev;
+      const next = { ...prev, inbox: (prev.inbox || []).map(n => ({ ...n, read: true })) };
+      _save(next);
+      return next;
+    });
+  }, []);
+
+  // Daily streak increment pop — fires every time the streak goes up (not just milestones).
+  useEffect(() => {
+    if (loading) return;
+    const { streak: currentStreak } = computeStreakFromSubs(progress.submissions || []);
+    const lastSeen = progress.lastSeenStreak || 0;
+    if (currentStreak > lastSeen && currentStreak > 0) {
+      const isMilestone = STREAK_MILESTONES.includes(currentStreak);
+      setProgress(prev => {
+        const next = { ...prev, lastSeenStreak: currentStreak };
+        _save(next);
+        return next;
+      });
+      if (!isMilestone) {
+        setStreakDayPop({ streak: currentStreak });
+        pushInbox({
+          id: `streak_day_${currentStreak}`,
+          type: 'streak',
+          title: `Day ${currentStreak} streak 🔥`,
+          body: `You extended your streak. Keep it going tomorrow.`,
+        });
+      }
+    }
+  }, [progress.submissions?.length, loading]);
 
   useEffect(() => {
     if (loading) return;
@@ -2356,6 +2910,12 @@ function UserProgressProvider({ children, onReset }) {
           return next;
         });
         setStreakCelebration({ streak: ms, xp: xpAward });
+        pushInbox({
+          id: `streak_milestone_${ms}`,
+          type: 'milestone',
+          title: `${ms}-Day Streak!`,
+          body: `Achievement unlocked · +${xpAward} XP. You're absolutely on fire.`,
+        });
         // Fire push notification if enabled
         if (notifSettings.enabled && notifSettings.milestoneEnabled) {
           scheduleMilestoneStreakNotif(ms);
@@ -2408,6 +2968,9 @@ function UserProgressProvider({ children, onReset }) {
       syncStatus,
       streakCelebration,
       dismissStreakCelebration: () => setStreakCelebration(null),
+      streakDayPop,
+      dismissStreakDayPop: () => setStreakDayPop(null),
+      pushInbox, markInboxRead,
       onReset: onReset || null,
     }}>
       {children}
@@ -2713,6 +3276,7 @@ function WeaknessDiagnosisModal({ visible, onClose }) {
       const holdTip   = getHoldTip(answers[3]);
       setResult({ ...diagnosis, strainTip, holdTip });
       badgeCtx?.checkBadges({ progress, diagnosisDone: true });
+      AsyncStorage.setItem('@handstandai_weakness_done', 'true').catch(() => {});
       animateStep(1, () => setPhase('result'));
     }
   };
@@ -2955,7 +3519,13 @@ function fmtTime(seconds) {
 // iOS limits a single speech session to ~60 sec. We restart every 50 sec.
 const SESSION_RESTART_MS = 50000;
 
-function VoiceTimerScreen({ visible, onClose }) {
+// VoiceTimerScreen disabled for Expo Go — @react-native-voice/voice is a native module
+// not available in the Expo Go client. Re-enable when building with EAS Build / dev client.
+function VoiceTimerScreen() {
+  return null;
+}
+function _VoiceTimerScreen_disabled({ visible, onClose }) {
+  if (true) return null;
   const insets    = useSafeAreaInsets();
   const badgeCtx  = useContext(BadgeContext);
   const { progress } = useContext(UserProgressContext);
@@ -3633,7 +4203,7 @@ function SplashScreen({ visible }) {
       <Animated.View style={[sp.glowRing, { opacity: glowAnim }]} />
       <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
         <View style={sp.logoBg}>
-          <Text style={{ fontSize: 52 }}>🤸</Text>
+          <HandstandFigure size={160} />
         </View>
       </Animated.View>
 
@@ -3645,7 +4215,7 @@ function SplashScreen({ visible }) {
 
 const sp = StyleSheet.create({
   container: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: C.bg, zIndex: 999 },
-  logoBg:    { width: 100, height: 100, borderRadius: 32, backgroundColor: C.accentDim, borderWidth: 1, borderColor: C.accent + '44', alignItems: 'center', justifyContent: 'center', shadowColor: C.accent, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 24, elevation: 12 },
+  logoBg:    { alignItems: 'center', justifyContent: 'center' },
   glowRing:  { position: 'absolute', width: 140, height: 140, borderRadius: 70, borderWidth: 2, borderColor: C.accent + '55', shadowColor: C.accent, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 20 },
   appName:   { fontSize: 32, fontWeight: '900', color: C.text, letterSpacing: -0.5, marginTop: 28 },
   circle1:   { position: 'absolute', width: 300, height: 300, borderRadius: 150, backgroundColor: C.accent + '06', top: -80, right: -80 },
@@ -3655,27 +4225,79 @@ const sp = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 // STREAK MILESTONE CELEBRATION OVERLAY
 // ─────────────────────────────────────────────────────────────────────────────
+// Sparkle particles that explode outward from center — used in both celebrations.
+function SparkleBurst({ count = 14, duration = 1100, radius = 140, size = 6, color = '#D7FF3D' }) {
+  const particles = useRef(
+    Array.from({ length: count }, (_, i) => ({
+      angle: (Math.PI * 2 * i) / count + Math.random() * 0.4,
+      dist: radius * (0.6 + Math.random() * 0.5),
+      delay: Math.random() * 120,
+      anim: new Animated.Value(0),
+    }))
+  ).current;
+
+  useEffect(() => {
+    Animated.stagger(
+      40,
+      particles.map(p =>
+        Animated.timing(p.anim, { toValue: 1, duration, delay: p.delay, useNativeDriver: true })
+      )
+    ).start();
+  }, []);
+
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      {particles.map((p, idx) => {
+        const tx = p.anim.interpolate({ inputRange: [0, 1], outputRange: [0, Math.cos(p.angle) * p.dist] });
+        const ty = p.anim.interpolate({ inputRange: [0, 1], outputRange: [0, Math.sin(p.angle) * p.dist] });
+        const op = p.anim.interpolate({ inputRange: [0, 0.2, 1], outputRange: [0, 1, 0] });
+        const sc = p.anim.interpolate({ inputRange: [0, 0.3, 1], outputRange: [0.4, 1, 0.6] });
+        return (
+          <Animated.View
+            key={idx}
+            style={{
+              position: 'absolute', left: '50%', top: '50%',
+              width: size, height: size, marginLeft: -size / 2, marginTop: -size / 2,
+              borderRadius: size / 2, backgroundColor: color,
+              opacity: op,
+              transform: [{ translateX: tx }, { translateY: ty }, { scale: sc }],
+            }}
+          />
+        );
+      })}
+    </View>
+  );
+}
+
 function StreakMilestoneCelebration({ celebration, onDismiss }) {
   const scaleAnim = useRef(new Animated.Value(0)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
   const flameAnim = useRef(new Animated.Value(1)).current;
+  const glowAnim = useRef(new Animated.Value(0.4)).current;
 
   useEffect(() => {
     if (celebration) {
       Animated.parallel([
-        Animated.spring(scaleAnim, { toValue: 1, tension: 60, friction: 8, useNativeDriver: true }),
-        Animated.timing(opacityAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
+        Animated.spring(scaleAnim, { toValue: 1, tension: 80, friction: 5, useNativeDriver: true }),
+        Animated.timing(opacityAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
       ]).start();
-      Vibration.vibrate([0, 80, 60, 80, 60, 120]);
+      // Punchier haptic pattern
+      Vibration.vibrate([0, 40, 40, 40, 40, 120, 60, 200]);
       // Pulsing flame
       Animated.loop(
         Animated.sequence([
-          Animated.timing(flameAnim, { toValue: 1.15, duration: 500, useNativeDriver: true }),
-          Animated.timing(flameAnim, { toValue: 1,    duration: 500, useNativeDriver: true }),
+          Animated.timing(flameAnim, { toValue: 1.2, duration: 450, useNativeDriver: true }),
+          Animated.timing(flameAnim, { toValue: 1,   duration: 450, useNativeDriver: true }),
         ])
       ).start();
-      // Auto-dismiss after 3 s
-      const t = setTimeout(onDismiss, 3000);
+      // Breathing glow
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(glowAnim, { toValue: 0.85, duration: 700, useNativeDriver: true }),
+          Animated.timing(glowAnim, { toValue: 0.4,  duration: 700, useNativeDriver: true }),
+        ])
+      ).start();
+      const t = setTimeout(onDismiss, 3600);
       return () => clearTimeout(t);
     } else {
       scaleAnim.setValue(0); opacityAnim.setValue(0);
@@ -3687,10 +4309,12 @@ function StreakMilestoneCelebration({ celebration, onDismiss }) {
     <Animated.View style={[smc.overlay, { opacity: opacityAnim }]} pointerEvents="box-none">
       <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onDismiss} />
       <Animated.View style={[smc.card, { transform: [{ scale: scaleAnim }] }]}>
-        <View style={smc.glow} />
-        <Animated.Text style={[smc.flameEmoji, { transform: [{ scale: flameAnim }] }]}>
-          {celebration.streak >= 100 ? '👑' : celebration.streak >= 30 ? '💎' : '🔥'}
-        </Animated.Text>
+        <Animated.View style={[smc.glow, { opacity: glowAnim }]} />
+        <SparkleBurst count={18} radius={170} size={7} color="#D7FF3D" />
+        <SparkleBurst count={10} radius={110} size={5} color="#FFD700" />
+        <Animated.View style={[smc.flameEmoji, { transform: [{ scale: flameAnim }] }]}>
+          <FlameIcon size={56} active />
+        </Animated.View>
         <Text style={smc.label}>ACHIEVEMENT UNLOCKED</Text>
         <Text style={smc.title}>{celebration.streak}-Day Streak!</Text>
         <View style={smc.xpPill}>
@@ -3702,11 +4326,62 @@ function StreakMilestoneCelebration({ celebration, onDismiss }) {
     </Animated.View>
   );
 }
+
+// Small daily streak-increment pop — fires every day the user extends their streak.
+function StreakDayPop({ pop, onDismiss }) {
+  const scaleAnim = useRef(new Animated.Value(0)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
+  const flameAnim = useRef(new Animated.Value(0.8)).current;
+  const liftAnim = useRef(new Animated.Value(30)).current;
+
+  useEffect(() => {
+    if (pop) {
+      Animated.parallel([
+        Animated.spring(scaleAnim, { toValue: 1, tension: 140, friction: 6, useNativeDriver: true }),
+        Animated.timing(opacityAnim, { toValue: 1, duration: 180, useNativeDriver: true }),
+        Animated.spring(liftAnim, { toValue: 0, tension: 90, friction: 8, useNativeDriver: true }),
+        Animated.spring(flameAnim, { toValue: 1.15, tension: 120, friction: 4, useNativeDriver: true }),
+      ]).start(() => {
+        Animated.spring(flameAnim, { toValue: 1, tension: 120, friction: 6, useNativeDriver: true }).start();
+      });
+      Vibration.vibrate([0, 30, 40, 60]);
+      const t = setTimeout(() => {
+        Animated.parallel([
+          Animated.timing(opacityAnim, { toValue: 0, duration: 240, useNativeDriver: true }),
+          Animated.timing(liftAnim,    { toValue: -20, duration: 240, useNativeDriver: true }),
+        ]).start(onDismiss);
+      }, 1700);
+      return () => clearTimeout(t);
+    } else {
+      scaleAnim.setValue(0); opacityAnim.setValue(0); liftAnim.setValue(30);
+    }
+  }, [pop]);
+
+  if (!pop) return null;
+  return (
+    <Animated.View style={[sdp.overlay, { opacity: opacityAnim }]} pointerEvents="box-none">
+      <Animated.View style={[sdp.card, { transform: [{ scale: scaleAnim }, { translateY: liftAnim }] }]}>
+        <SparkleBurst count={12} radius={120} size={5} color="#D7FF3D" />
+        <Animated.View style={{ transform: [{ scale: flameAnim }] }}>
+          <FlameIcon size={42} active />
+        </Animated.View>
+        <Text style={sdp.dayNum}>Day {pop.streak}</Text>
+        <Text style={sdp.label}>STREAK EXTENDED 🔥</Text>
+      </Animated.View>
+    </Animated.View>
+  );
+}
+const sdp = StyleSheet.create({
+  overlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'flex-start', paddingTop: height * 0.22, zIndex: 998 },
+  card:    { backgroundColor: C.bgCard, borderRadius: R.xxl, paddingHorizontal: 28, paddingVertical: 20, alignItems: 'center', borderWidth: 1, borderColor: '#D7FF3D66', shadowColor: '#D7FF3D', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.65, shadowRadius: 24, minWidth: 180 },
+  dayNum:  { fontSize: 28, fontWeight: '900', color: C.text, marginTop: 6, letterSpacing: -0.5 },
+  label:   { fontSize: 10, fontWeight: '800', letterSpacing: 1.5, color: '#D7FF3D', marginTop: 2 },
+});
 const smc = StyleSheet.create({
   overlay:    { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.88)', zIndex: 999 },
   card:       { width: width * 0.82, backgroundColor: C.bgCard, borderRadius: R.xxl, padding: 32, alignItems: 'center', borderWidth: 1, borderColor: C.accent + '55', shadowColor: C.accent, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 32 },
   glow:       { position: 'absolute', width: 200, height: 200, borderRadius: 100, backgroundColor: C.accent + '18', top: -20 },
-  flameEmoji: { fontSize: 72, marginBottom: 12 },
+  flameEmoji: { marginBottom: 12, alignItems: 'center' },
   label:      { fontSize: 10, fontWeight: '700', letterSpacing: 2, color: C.accent, marginBottom: 4 },
   title:      { fontSize: 30, fontWeight: '900', color: C.text, letterSpacing: -0.5, marginBottom: 12 },
   xpPill:     { backgroundColor: C.accent, paddingHorizontal: 20, paddingVertical: 6, borderRadius: R.full, marginBottom: 12 },
@@ -3784,16 +4459,16 @@ function StreakDetailModal({ visible, onClose }) {
           {/* Big flame */}
           <View style={sdm.flameWrap}>
             <View style={[sdm.flameGlow, { backgroundColor: flameColor + '22' }]} />
-            <Animated.Text style={[sdm.flameIcon, { transform: [{ scale: flameAnim }] }]}>
-              {flameEmoji}
-            </Animated.Text>
+            <Animated.View style={[sdm.flameIcon, { transform: [{ scale: flameAnim }] }]}>
+              <FlameIcon size={64} active={currentStreak > 0} />
+            </Animated.View>
             <Text style={[T.num, { fontSize: 72, color: currentStreak >= 30 ? '#FF8C00' : C.accent }]}>
               {currentStreak}
             </Text>
             <Text style={[T.label, { color: C.textMuted, marginTop: -4 }]}>DAY STREAK</Text>
             {frozen && (
               <View style={sdm.frozenPill}>
-                <Text style={{ fontSize: 13 }}>❄️</Text>
+                <IceFlakeIcon size={13} />
                 <Text style={[T.small, { color: '#60C8FF', fontWeight: '700' }]}>Freeze day active</Text>
               </View>
             )}
@@ -3889,7 +4564,7 @@ const sdm = StyleSheet.create({
   closeBtn:        { width: 36, height: 36, borderRadius: 18, backgroundColor: C.bgCard, alignItems: 'center', justifyContent: 'center' },
   flameWrap:       { alignItems: 'center', paddingTop: 12, paddingBottom: 24 },
   flameGlow:       { position: 'absolute', width: 180, height: 180, borderRadius: 90, top: 0 },
-  flameIcon:       { fontSize: 48, marginBottom: 4 },
+  flameIcon:       { marginBottom: 4, alignItems: 'center' },
   frozenPill:      { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#1A2E3A', borderRadius: R.full, paddingHorizontal: 12, paddingVertical: 5, marginTop: 8, borderWidth: 1, borderColor: '#60C8FF44' },
   statsRow:        { flexDirection: 'row', backgroundColor: C.bgCard, borderRadius: R.xl, borderWidth: 1, borderColor: C.border, marginBottom: S.md, overflow: 'hidden' },
   statBox:         { flex: 1, alignItems: 'center', paddingVertical: S.lg },
@@ -3910,10 +4585,128 @@ const sdm = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 // SCREEN – Home (Movemate style)
 // ─────────────────────────────────────────────────────────────────────────────
+function NotificationPanel({ visible, onClose, inbox }) {
+  const insets = useSafeAreaInsets();
+  const slide    = useRef(new Animated.Value(-500)).current;
+  const fade     = useRef(new Animated.Value(0)).current;
+  const scale    = useRef(new Animated.Value(0.92)).current;
+  const rowAnim  = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (visible) {
+      // Reset every animated value so the full entrance plays on every open,
+      // not only the first mount.
+      slide.setValue(-500);
+      scale.setValue(0.92);
+      fade.setValue(0);
+      rowAnim.setValue(0);
+      Animated.parallel([
+        // Bouncy drop-down with overshoot
+        Animated.spring(slide, { toValue: 0, tension: 55, friction: 7, useNativeDriver: true }),
+        Animated.spring(scale, { toValue: 1, tension: 80, friction: 6, useNativeDriver: true }),
+        Animated.timing(fade,  { toValue: 1, duration: 180, useNativeDriver: true }),
+      ]).start();
+      // Staggered row entrance fires right after the panel settles
+      Animated.timing(rowAnim, { toValue: 1, duration: 500, delay: 120, useNativeDriver: true }).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(slide, { toValue: -500, duration: 240, useNativeDriver: true }),
+        Animated.timing(scale, { toValue: 0.94, duration: 240, useNativeDriver: true }),
+        Animated.timing(fade,  { toValue: 0,    duration: 220, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [visible]);
+
+  const relTime = (iso) => {
+    const ms = Date.now() - new Date(iso).getTime();
+    const m = Math.floor(ms / 60000);
+    if (m < 1) return 'just now';
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h ago`;
+    const d = Math.floor(h / 24);
+    return `${d}d ago`;
+  };
+
+  const iconFor = (type) => {
+    if (type === 'streak')    return { name: 'flame',              color: C.accentOrange };
+    if (type === 'milestone') return { name: 'trophy',             color: C.accent };
+    if (type === 'badge')     return { name: 'ribbon',             color: C.accent };
+    return { name: 'notifications', color: C.textSub };
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
+      <Animated.View style={[np.backdrop, { opacity: fade }]}>
+        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} />
+      </Animated.View>
+      <Animated.View style={[np.panel, {
+        paddingTop: insets.top + 10,
+        opacity: fade,
+        transform: [{ translateY: slide }, { scale }],
+      }]}>
+        <View style={np.header}>
+          <Text style={np.title}>Notifications</Text>
+          <TouchableOpacity onPress={onClose} style={np.closeBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Ionicons name="close" size={20} color={C.text} />
+          </TouchableOpacity>
+        </View>
+        {inbox.length === 0 ? (
+          <View style={np.empty}>
+            <Ionicons name="notifications-off-outline" size={28} color={C.textMuted} />
+            <Text style={np.emptyText}>You're all caught up</Text>
+          </View>
+        ) : (
+          <ScrollView style={{ maxHeight: height * 0.42 }} contentContainerStyle={{ paddingBottom: 14 }} showsVerticalScrollIndicator={false}>
+            {inbox.map((n, idx) => {
+              const ic = iconFor(n.type);
+              const step = 1 / Math.max(inbox.length, 1);
+              const start = Math.min(idx * step * 0.7, 0.7);
+              const end   = Math.min(start + step + 0.2, 1);
+              const rowTranslate = rowAnim.interpolate({ inputRange: [0, start, end, 1], outputRange: [20, 20, 0, 0] });
+              const rowOpacity   = rowAnim.interpolate({ inputRange: [0, start, end, 1], outputRange: [0, 0, 1, 1] });
+              return (
+                <Animated.View key={n.id} style={[np.row, { opacity: rowOpacity, transform: [{ translateY: rowTranslate }] }]}>
+                  <View style={[np.rowIcon, { backgroundColor: ic.color + '22' }]}>
+                    <Ionicons name={ic.name} size={18} color={ic.color} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={np.rowTitle}>{n.title}</Text>
+                    {!!n.body && <Text style={np.rowBody}>{n.body}</Text>}
+                    <Text style={np.rowTime}>{relTime(n.date)}</Text>
+                  </View>
+                </Animated.View>
+              );
+            })}
+          </ScrollView>
+        )}
+      </Animated.View>
+    </Modal>
+  );
+}
+const np = StyleSheet.create({
+  backdrop:  { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.55)' },
+  panel:     { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: C.bgCard, borderBottomLeftRadius: R.xxl, borderBottomRightRadius: R.xxl, paddingHorizontal: S.md, paddingBottom: S.md, borderWidth: 1, borderColor: C.border, shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } },
+  header:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  title:     { fontSize: 18, fontWeight: '800', color: C.text, letterSpacing: -0.3 },
+  closeBtn:  { width: 32, height: 32, borderRadius: 16, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center' },
+  empty:     { alignItems: 'center', paddingVertical: 28, gap: 8 },
+  emptyText: { fontSize: 13, color: C.textMuted, fontWeight: '600' },
+  row:       { flexDirection: 'row', gap: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.border + '66' },
+  rowIcon:   { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  rowTitle:  { fontSize: 14, fontWeight: '700', color: C.text, marginBottom: 2 },
+  rowBody:   { fontSize: 12, color: C.textSub, lineHeight: 17 },
+  rowTime:   { fontSize: 10, color: C.textMuted, marginTop: 4, fontWeight: '600' },
+});
+
 function HomeScreen({ navigation }) {
   const insets  = useSafeAreaInsets();
   const { progress, getLevelProgress, completeDailyChallenge, addXP, dismissStartHere,
-          streakCelebration, dismissStreakCelebration } = useContext(UserProgressContext);
+          streakCelebration, dismissStreakCelebration,
+          streakDayPop, dismissStreakDayPop, markInboxRead } = useContext(UserProgressContext);
+  const [showInbox, setShowInbox] = useState(false);
+  const inbox = progress.inbox || [];
+  const unreadCount = inbox.filter(n => !n.read).length;
   const { buildWeeklySummary, computeForgivingStreak } = useContext(MilestoneContext);
   const fadeAnim  = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
@@ -3924,6 +4717,8 @@ function HomeScreen({ navigation }) {
   const [showStreakModal, setShowStreakModal] = useState(false);
   const [pendingNav,    setPendingNav]    = useState(null);
   const [avatarUri,     setAvatarUri]     = useState(null);
+  const [checklist,     setChecklist]     = useState({ firstDrill: false, weakness: false });
+  const [checklistDismissed, setChecklistDismissed] = useState(false);
 
   const level = EXERCISE_LEVELS.find(l => l.id === Math.min(progress.currentLevel, EXERCISE_LEVELS.length)) || EXERCISE_LEVELS[0];
   const daily = getDailyChallenge(progress.currentLevel);
@@ -3949,6 +4744,19 @@ function HomeScreen({ navigation }) {
     }
     // Load avatar
     AsyncStorage.getItem(AVATAR_KEY).then(uri => { if (uri) setAvatarUri(uri); });
+    // Load first-handstand checklist state
+    AsyncStorage.multiGet([
+      '@handstandai_first_drill_done',
+      '@handstandai_weakness_done',
+      '@handstandai_checklist_dismissed',
+    ]).then(pairs => {
+      const map = Object.fromEntries(pairs);
+      setChecklist({
+        firstDrill: map['@handstandai_first_drill_done'] === 'true',
+        weakness:   map['@handstandai_weakness_done']   === 'true',
+      });
+      setChecklistDismissed(map['@handstandai_checklist_dismissed'] === 'true');
+    });
     return () => { fadeAnim.setValue(0); slideAnim.setValue(20); setShowExPicker(false); };
   }, []));
 
@@ -3974,6 +4782,17 @@ function HomeScreen({ navigation }) {
 
   const firstName = progress.userName ? progress.userName.split(' ')[0].toUpperCase() : 'ATHLETE';
   const btnScale  = useRef(new Animated.Value(1)).current;
+  // Shimmer loop for the XP bar — tactile polish signal
+  const xpShimmer = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(xpShimmer, { toValue: 1, duration: 1800, useNativeDriver: true }),
+      Animated.delay(2200),
+      Animated.timing(xpShimmer, { toValue: 0, duration: 0, useNativeDriver: true }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [xpShimmer]);
 
   const pressBtnIn  = () => Animated.spring(btnScale, { toValue: 0.96, useNativeDriver: true }).start();
   const pressBtnOut = () => Animated.spring(btnScale, { toValue: 1, friction: 4, useNativeDriver: true }).start();
@@ -4015,18 +4834,111 @@ function HomeScreen({ navigation }) {
           <TouchableOpacity onPress={() => navigation.navigate('Profile')} style={hd.avatarWrap}>
             {avatarUri
               ? <Image source={{ uri: avatarUri }} style={{ width: 40, height: 40, borderRadius: 20 }} resizeMode="cover" />
-              : <Text style={hd.avatarText}>{initials || '🤸'}</Text>
+              : (initials ? <Text style={hd.avatarText}>{initials}</Text> : <HandstandFigure size={22} />)
             }
           </TouchableOpacity>
           <View style={{ flex: 1, marginLeft: 12 }}>
             <Text style={hd.welcomeLabel}>WELCOME BACK,</Text>
             <Text style={hd.welcomeName}>{firstName}</Text>
           </View>
-          <TouchableOpacity style={hd.notifBtn} onPress={() => {}}>
+          <TouchableOpacity style={hd.notifBtn} onPress={() => { setShowInbox(true); markInboxRead(); }}>
             <Ionicons name="notifications-outline" size={20} color={C.textSub} />
-            <View style={hd.notifDot} />
+            {unreadCount > 0 && <View style={hd.notifDot} />}
           </TouchableOpacity>
         </Animated.View>
+
+        {/* ── Streak-at-risk banner (loss aversion) ── */}
+        {(() => {
+          const today = new Date(); today.setHours(0, 0, 0, 0);
+          const trainedToday = (progress.submissions || []).some(s => {
+            const d = new Date(s.date); d.setHours(0, 0, 0, 0);
+            return d.getTime() === today.getTime();
+          });
+          const hour = new Date().getHours();
+          const atRisk = forgivingStreak >= 2 && !trainedToday && hour >= 12;
+          if (!atRisk) return null;
+          return (
+            <Animated.View style={[hd.streakRiskBanner, { opacity: fadeAnim }]}>
+              {frozen ? <IceFlakeIcon size={26} /> : <FlameIcon size={26} active />}
+              <View style={{ flex: 1 }}>
+                <Text style={[T.h4, { fontSize: 14, color: C.text, marginBottom: 2 }]}>
+                  {frozen
+                    ? `Train today or lose your ${forgivingStreak}-day streak`
+                    : `Keep your ${forgivingStreak}-day streak alive`}
+                </Text>
+                <Text style={[T.small, { color: C.textSub, lineHeight: 16 }]}>
+                  {frozen ? 'Your rest day is already used this week' : 'One session today keeps the fire going'}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={hd.startBannerBtn}
+                activeOpacity={0.85}
+                onPress={() => navigation.navigate('Levels')}
+              >
+                <Text style={[T.cap, { color: C.black, fontWeight: '800' }]}>Train now</Text>
+              </TouchableOpacity>
+            </Animated.View>
+          );
+        })()}
+
+        {/* ── 1.5 FIRST-HANDSTAND CHECKLIST ── */}
+        {(() => {
+          const submissionCount = progress.submissions?.length || 0;
+          const steps = [
+            { key: 'quiz',       label: 'Complete onboarding quiz',   done: true,                       onPress: null },
+            { key: 'drill',      label: 'Do your first wrist warmup', done: checklist.firstDrill,       onPress: () => navigation.navigate('WristWarmup', { exerciseId: 'wrist_prep_01', levelId: 1 }) },
+            { key: 'submission', label: 'Record your first wall hold',done: submissionCount >= 1,       onPress: () => navigation.navigate('Levels') },
+            { key: 'weakness',   label: 'Run the Weakness Diagnosis', done: checklist.weakness,         onPress: () => setShowWeakness(true) },
+            { key: 'day3',       label: 'Complete 3 training sessions',done: submissionCount >= 3,      onPress: () => navigation.navigate('Levels') },
+          ];
+          const doneCount = steps.filter(s => s.done).length;
+          const allDone = doneCount === steps.length;
+          const tooExperienced = submissionCount >= 5;
+          if (checklistDismissed || tooExperienced || allDone) return null;
+          return (
+            <Animated.View style={{ marginHorizontal: S.lg, marginTop: S.md, marginBottom: S.sm, padding: S.md, borderRadius: R.xl, backgroundColor: C.bgCard, borderWidth: 1, borderColor: C.accent + '33', opacity: fadeAnim }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+                <Text style={{ flex: 1, fontSize: 11, letterSpacing: 1.5, fontWeight: '800', color: C.accent }}>FIRST HANDSTAND CHECKLIST</Text>
+                <Text style={[T.cap, { color: C.textMuted, fontWeight: '700' }]}>{doneCount}/{steps.length}</Text>
+                <TouchableOpacity
+                  onPress={async () => {
+                    setChecklistDismissed(true);
+                    try { await AsyncStorage.setItem('@handstandai_checklist_dismissed', 'true'); } catch (_) {}
+                  }}
+                  style={{ paddingHorizontal: 6, paddingVertical: 4, marginLeft: 6 }}
+                  activeOpacity={0.6}
+                >
+                  <Ionicons name="close" size={14} color={C.textMuted} />
+                </TouchableOpacity>
+              </View>
+              {/* Progress bar */}
+              <View style={{ height: 4, backgroundColor: C.border, borderRadius: 2, marginBottom: 10, overflow: 'hidden' }}>
+                <View style={{ height: 4, width: `${(doneCount / steps.length) * 100}%`, backgroundColor: C.accent, borderRadius: 2 }} />
+              </View>
+              {steps.map(s => (
+                <TouchableOpacity
+                  key={s.key}
+                  onPress={s.done || !s.onPress ? undefined : s.onPress}
+                  activeOpacity={s.done || !s.onPress ? 1 : 0.7}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 }}
+                >
+                  <View style={{
+                    width: 20, height: 20, borderRadius: 10,
+                    borderWidth: 1.5, borderColor: s.done ? C.accent : C.border,
+                    backgroundColor: s.done ? C.accent : 'transparent',
+                    alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    {s.done && <Ionicons name="checkmark" size={12} color={C.black} />}
+                  </View>
+                  <Text style={{ flex: 1, fontSize: 14, color: s.done ? C.textMuted : C.text, fontWeight: '600', textDecorationLine: s.done ? 'line-through' : 'none' }}>
+                    {s.label}
+                  </Text>
+                  {!s.done && s.onPress && <Ionicons name="chevron-forward" size={16} color={C.textMuted} />}
+                </TouchableOpacity>
+              ))}
+            </Animated.View>
+          );
+        })()}
 
         {/* ── 2. STATS ROW ── */}
         <Animated.View style={[hd.statsRow, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
@@ -4051,15 +4963,26 @@ function HomeScreen({ navigation }) {
 
         {/* ── 3. WEEKLY ACTIVITY CARD ── */}
         <Animated.View style={[hd.card, { marginTop: 24, opacity: fadeAnim }]}>
-          <View style={hd.cardHeaderRow}>
-            <Text style={hd.cardLabel}>THIS WEEK</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={hd.cardLabel}>WEEKLY GOAL</Text>
-              <Text style={[hd.cardLabel, { color: C.accent }]}>
-                {barData.filter(d => d.trained).length}/7 DAYS
-              </Text>
-            </View>
-          </View>
+          {(() => {
+            const trainedCount = barData.filter(d => d.trained).length;
+            const remaining = Math.max(0, 7 - trainedCount);
+            let kicker;
+            if (trainedCount === 0)      kicker = "Let's start this week strong";
+            else if (trainedCount >= 7)  kicker = 'Week complete — incredible';
+            else if (remaining === 1)    kicker = 'One more day to hit your weekly goal';
+            else                          kicker = `${remaining} more days to hit your weekly goal`;
+            return (
+              <>
+                <View style={hd.cardHeaderRow}>
+                  <Text style={hd.cardLabel}>THIS WEEK</Text>
+                  <Text style={[hd.cardLabel, { color: C.accent }]}>{trainedCount}/7 DAYS</Text>
+                </View>
+                <Text style={[T.h4, { fontSize: 15, color: C.text, marginTop: 6, marginBottom: 12, lineHeight: 20 }]}>
+                  {kicker}
+                </Text>
+              </>
+            );
+          })()}
           <View style={hd.barsRow}>
             {barData.map((d, i) => (
               <View key={i} style={hd.barCol}>
@@ -4083,14 +5006,30 @@ function HomeScreen({ navigation }) {
           <Text style={hd.levelName}>{level.name.toUpperCase()}</Text>
           <Text style={[T.small, { color: C.textMuted, marginBottom: 12, marginTop: 2 }]}>{level.subtitle}</Text>
           <View style={hd.progressTrack}>
-            <View style={[hd.progressFill, { width: `${Math.round(getLevelProgress() * 100)}%` }]} />
+            <View style={[hd.progressFill, { width: `${Math.round(getLevelProgress() * 100)}%` }]}>
+              <Animated.View
+                pointerEvents="none"
+                style={{
+                  position: 'absolute', top: 0, bottom: 0, width: 60,
+                  transform: [{ translateX: xpShimmer.interpolate({ inputRange: [0, 1], outputRange: [-60, 260] }) }],
+                }}
+              >
+                <LinearGradient
+                  colors={['transparent', 'rgba(255,255,255,0.55)', 'transparent']}
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
+                  style={{ flex: 1 }}
+                />
+              </Animated.View>
+            </View>
           </View>
           <Text style={[hd.cardLabel, { marginTop: 8, letterSpacing: 0.5 }]}>
             {progress.xp} / {XP_PER_LEVEL} XP TO NEXT LEVEL
           </Text>
         </Animated.View>
 
-        {/* ── Hands-Free Timer card ── */}
+        {/* Hands-Free Timer card disabled for Expo Go */}
+        {false && (
         <Animated.View style={[{ marginTop: 12, marginHorizontal: 20 }, { opacity: fadeAnim }]}>
           <TouchableOpacity
             style={vt.entryCard}
@@ -4109,6 +5048,7 @@ function HomeScreen({ navigation }) {
             <Ionicons name="chevron-forward" size={16} color={C.accent} />
           </TouchableOpacity>
         </Animated.View>
+        )}
 
         {/* ── Find Your Weakness card ── */}
         <Animated.View style={[{ marginTop: 8, marginHorizontal: 20 }, { opacity: fadeAnim }]}>
@@ -4129,45 +5069,6 @@ function HomeScreen({ navigation }) {
             <Ionicons name="chevron-forward" size={16} color={C.accent} />
           </TouchableOpacity>
         </Animated.View>
-
-        {/* ── 5. PRIMARY CTA ── */}
-        <Animated.View style={[{ marginTop: 12, marginHorizontal: 20 }, { opacity: fadeAnim }, { transform: [{ scale: btnScale }] }]}>
-          <TouchableOpacity
-            onPressIn={pressBtnIn}
-            onPressOut={pressBtnOut}
-            onPress={() => setShowExPicker(true)}
-            activeOpacity={1}
-            style={hd.ctaBtn}
-          >
-            <Text style={hd.ctaText}>START TODAY'S TRAINING</Text>
-            <View style={hd.ctaArrow}>
-              <Ionicons name="arrow-forward" size={20} color={C.accent} />
-            </View>
-          </TouchableOpacity>
-        </Animated.View>
-
-        {/* ── Start Here banner (shown until dismissed) ── */}
-        {!progress.startHereDismissed && (
-          <Animated.View style={[hd.startBanner, { opacity: fadeAnim }]}>
-            <View style={{ flex: 1 }}>
-              <Text style={[T.label, { color: C.accent, marginBottom: 3 }]}>NEW TO HANDSTANDS?</Text>
-              <Text style={[T.h4, { fontSize: 13, marginBottom: 2 }]}>Start with Level 1 – Beginner</Text>
-              <Text style={[T.small, { lineHeight: 16 }]}>Build your hollow body, wall walks, and pike hold first.</Text>
-            </View>
-            <View style={{ alignItems: 'flex-end', gap: 6 }}>
-              <TouchableOpacity
-                style={hd.startBannerBtn}
-                activeOpacity={0.85}
-                onPress={() => { dismissStartHere(); navigation.navigate('Levels'); }}
-              >
-                <Text style={[T.cap, { color: C.black, fontWeight: '800' }]}>Go to Level 1</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={dismissStartHere}>
-                <Ionicons name="close" size={16} color={C.textMuted} />
-              </TouchableOpacity>
-            </View>
-          </Animated.View>
-        )}
 
         {/* ── Daily challenge ── */}
         <Animated.View style={[hd.card, { marginTop: 24, opacity: fadeAnim }]}>
@@ -4291,12 +5192,14 @@ function HomeScreen({ navigation }) {
       </Modal>
 
       {/* ── Weakness Diagnosis Modal ── */}
-      <VoiceTimerScreen visible={showVoiceTimer} onClose={() => setShowVoiceTimer(false)} />
+      {/* <VoiceTimerScreen visible={showVoiceTimer} onClose={() => setShowVoiceTimer(false)} /> disabled for Expo Go */}
       <WeaknessDiagnosisModal visible={showWeakness} onClose={() => setShowWeakness(false)} />
 
       {/* ── Streak detail + celebration ── */}
       <StreakDetailModal visible={showStreakModal} onClose={() => setShowStreakModal(false)} />
       <StreakMilestoneCelebration celebration={streakCelebration} onDismiss={dismissStreakCelebration} />
+      <StreakDayPop pop={streakDayPop} onDismiss={dismissStreakDayPop} />
+      <NotificationPanel visible={showInbox} onClose={() => setShowInbox(false)} inbox={inbox} />
     </View>
   );
 }
@@ -4372,6 +5275,7 @@ const hd = StyleSheet.create({
   // start banner
   startBanner:   { flexDirection: 'row', alignItems: 'center', marginHorizontal: 20, marginTop: 16, backgroundColor: C.bgCard, borderRadius: R.xl, padding: S.md, borderWidth: 1, borderColor: C.accent + '44', gap: S.sm },
   startBannerBtn:{ backgroundColor: C.accent, borderRadius: R.full, paddingHorizontal: 14, paddingVertical: 7 },
+  streakRiskBanner: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 20, marginTop: 16, backgroundColor: '#2A1810', borderRadius: R.xl, padding: S.md, borderWidth: 1, borderColor: '#FF8C00' + '55', gap: S.sm },
   // daily
   tipRow:        { flexDirection: 'row', gap: 8, backgroundColor: C.bgCardElevated, borderRadius: R.md, padding: 10 },
   dailyCompleteBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: C.accent, borderRadius: R.full, paddingVertical: 13 },
@@ -5033,12 +5937,7 @@ function VideoSubmissionScreen({ route, navigation }) {
         const controller = new AbortController();
         const timeoutId  = setTimeout(() => controller.abort(), 15000);
         try {
-          const response = await fetch(AI_CHECK_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ imageBase64: base64 }),
-            signal: controller.signal,
-          });
+          const response = await aiCheckFetch(base64, { signal: controller.signal });
           const data = await response.json();
           const rawText = data?.content?.[0]?.text || '';
           const jsonMatch = rawText.match(/\{[\s\S]*\}/);
@@ -5121,8 +6020,7 @@ function VideoSubmissionScreen({ route, navigation }) {
   if (!cameraPermission || !micPermission) {
     return (
       <View style={vs.permContainer}>
-        <ActivityIndicator color={C.accent} size="large" />
-        <Text style={[T.small, { marginTop: S.md }]}>Checking permissions…</Text>
+        <HandstandLoader message="Checking permissions…" compact />
       </View>
     );
   }
@@ -5464,10 +6362,12 @@ function SubmissionReviewScreen({ route, navigation }) {
   const insets   = useSafeAreaInsets();
   const level    = EXERCISE_LEVELS.find(l => l.id === levelId) || EXERCISE_LEVELS[0];
   const { addXP, progress, completeLevelWithXP } = useContext(UserProgressContext);
-  const { showPaywall, isPro } = useContext(PurchaseContext);
+  const { showPaywall, isPro, hasActiveEntitlement } = useContext(PurchaseContext);
   const baseXP   = 50;
   const bonusXP  = aiVerified ? 10 : 0;
-  const totalXP  = baseXP + bonusXP;
+  // Variable reward — ~30% chance of a surprise XP drop (Skinner box / intermittent reinforcement)
+  const surpriseXP = useRef(Math.random() < 0.3 ? (10 + Math.floor(Math.random() * 16)) : 0).current;
+  const totalXP  = baseXP + bonusXP + surpriseXP;
 
   const [stageIdx,      setStageIdx]      = useState(-1);
   const [allDone,       setAllDone]       = useState(false);
@@ -5486,6 +6386,7 @@ function SubmissionReviewScreen({ route, navigation }) {
   const logoScale   = useRef(new Animated.Value(0)).current;
   const doneScale   = useRef(new Animated.Value(0.85)).current;
   const doneOpacity = useRef(new Animated.Value(0)).current;
+  const viewShotRef = useRef(null);
 
   useEffect(() => {
     Animated.spring(logoScale, { toValue: 1, tension: 60, friction: 10, useNativeDriver: true }).start();
@@ -5498,6 +6399,8 @@ function SubmissionReviewScreen({ route, navigation }) {
             xpRef.current = true;
             addXP(totalXP);
           }
+          // Peak-end reward — tactile celebration at the final moment
+          Vibration.vibrate(surpriseXP > 0 ? [0, 40, 70, 40, 70, 80] : [0, 35, 60, 35]);
           Animated.parallel([
             Animated.spring(doneScale,   { toValue: 1, tension: 50, friction: 8, useNativeDriver: true }),
             Animated.timing(doneOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
@@ -5529,6 +6432,14 @@ function SubmissionReviewScreen({ route, navigation }) {
 
   const handleInstagram = () => {
     Linking.openURL('instagram://').catch(() => Linking.openURL('https://www.instagram.com'));
+  };
+
+  const handleShareStory = async () => {
+    try {
+      if (!viewShotRef.current || !viewShotRef.current.capture) return;
+      const uri = await viewShotRef.current.capture({ format: 'png', quality: 0.95 });
+      await Share.share({ url: uri, message: `🤸 Level ${levelId} · ${level.name} — HandstandHub` });
+    } catch (_) {}
   };
 
   return (
@@ -5583,6 +6494,14 @@ function SubmissionReviewScreen({ route, navigation }) {
             <Ionicons name="flash" size={20} color={C.black} />
             <Text style={[T.h3, { color: C.black, fontWeight: '900' }]}>+{totalXP} XP earned{aiVerified ? ` (incl. +${bonusXP} AI bonus)` : ''}!</Text>
           </View>
+
+          {/* Surprise bonus — variable reward */}
+          {surpriseXP > 0 && (
+            <View style={[sv.aiBannerGreen, { backgroundColor: C.accent + '18', borderColor: C.accent + '55' }]}>
+              <DiceIcon size={18} />
+              <Text style={[T.small, { color: C.accent, fontWeight: '800' }]}>Lucky bonus · +{surpriseXP} surprise XP</Text>
+            </View>
+          )}
 
           {/* AI banner */}
           {aiVerified ? (
@@ -5640,20 +6559,64 @@ function SubmissionReviewScreen({ route, navigation }) {
           {/* Share section */}
           <View style={sv.shareSection}>
             <Text style={[T.label, { marginBottom: S.sm }]}>SHARE YOUR PRACTICE</Text>
+            <TouchableOpacity
+              style={[sv.shareBtn, { backgroundColor: C.accent, borderColor: C.accent, flexDirection: 'row', marginBottom: S.sm, paddingVertical: S.md + 2 }]}
+              onPress={handleShareStory}
+              activeOpacity={0.85}
+            >
+              <SparkleIcon size={18} color={C.black} />
+              <Text style={[T.h4, { color: C.black, fontSize: 14, marginLeft: 8 }]}>Share as Story (9:16)</Text>
+            </TouchableOpacity>
             <View style={sv.shareRow}>
               <TouchableOpacity style={[sv.shareBtn, { backgroundColor: '#25D366' + '18', borderColor: '#25D366' + '44' }]} onPress={handleWhatsApp} activeOpacity={0.8}>
-                <Text style={{ fontSize: 20 }}>💬</Text>
+                <WhatsAppIcon size={22} />
                 <Text style={[T.cap, { color: '#25D366', fontWeight: '700' }]}>WhatsApp</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[sv.shareBtn, { backgroundColor: '#E1306C' + '18', borderColor: '#E1306C' + '44' }]} onPress={handleInstagram} activeOpacity={0.8}>
-                <Text style={{ fontSize: 20 }}>📸</Text>
+                <InstagramIcon size={22} />
                 <Text style={[T.cap, { color: '#E1306C', fontWeight: '700' }]}>Instagram</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[sv.shareBtn, { backgroundColor: C.accentDim, borderColor: C.accent + '44' }]} onPress={handleGeneralShare} activeOpacity={0.8}>
-                <Text style={{ fontSize: 20 }}>🤝</Text>
+                <ShareIcon size={22} />
                 <Text style={[T.cap, { color: C.accent, fontWeight: '700' }]}>Share</Text>
               </TouchableOpacity>
             </View>
+          </View>
+
+          {/* Off-screen 9:16 shareable card */}
+          <View style={{ position: 'absolute', top: -10000, left: 0, opacity: 1 }} pointerEvents="none">
+            <ViewShot ref={viewShotRef} options={{ format: 'png', quality: 0.95 }}>
+              <View style={{ width: 360, height: 640, backgroundColor: C.bg, padding: 32, justifyContent: 'space-between' }}>
+                <LinearGradient colors={[C.accent + '28', 'transparent']} style={StyleSheet.absoluteFill} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 0.7 }} />
+                <View>
+                  <Text style={{ color: C.accent, fontSize: 12, fontWeight: '800', letterSpacing: 2 }}>HANDSTANDHUB</Text>
+                  <Text style={{ color: C.text, fontSize: 28, fontWeight: '900', marginTop: 6 }}>Session Complete</Text>
+                </View>
+                <View style={{ alignItems: 'center' }}>
+                  <HandstandFigure size={96} />
+                  <View style={{ backgroundColor: C.accent, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 999, marginTop: 10 }}>
+                    <Text style={{ color: C.black, fontWeight: '900', fontSize: 14 }}>LEVEL {levelId} · {level.name.toUpperCase()}</Text>
+                  </View>
+                </View>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                  <View style={{ alignItems: 'center', flex: 1 }}>
+                    <Text style={{ color: C.textMuted, fontSize: 10, fontWeight: '700', letterSpacing: 1 }}>HELD</Text>
+                    <Text style={{ color: C.text, fontSize: 28, fontWeight: '900', marginTop: 4 }}>{duration}s</Text>
+                  </View>
+                  <View style={{ alignItems: 'center', flex: 1 }}>
+                    <Text style={{ color: C.textMuted, fontSize: 10, fontWeight: '700', letterSpacing: 1 }}>XP</Text>
+                    <Text style={{ color: C.accent, fontSize: 28, fontWeight: '900', marginTop: 4 }}>+{totalXP}</Text>
+                  </View>
+                  <View style={{ alignItems: 'center', flex: 1 }}>
+                    <Text style={{ color: C.textMuted, fontSize: 10, fontWeight: '700', letterSpacing: 1 }}>STREAK</Text>
+                    <Text style={{ color: C.text, fontSize: 28, fontWeight: '900', marginTop: 4 }}>🔥{progress.streak || 0}</Text>
+                  </View>
+                </View>
+                <View style={{ alignItems: 'center' }}>
+                  <Text style={{ color: C.textSub, fontSize: 11, fontWeight: '600' }}>Train with HandstandHub</Text>
+                </View>
+              </View>
+            </ViewShot>
           </View>
 
           {/* Complete Level button — gated by mastery */}
@@ -5666,10 +6629,8 @@ function SubmissionReviewScreen({ route, navigation }) {
                   Vibration.vibrate(30);
                   completeLevelWithXP(levelId, level.xpReward);
                   setLevelJustDone(true);
-                  // After completing Level 2, celebrate then offer Pro upgrade
-                  if (levelId === FREE_MAX_LEVEL && !isPro()) {
-                    setTimeout(() => showPaywall('level2_complete', ''), 1200);
-                  }
+                  // No upgrade prompt — every user in the app has already paid
+                  // (or is in trial). Past contextual paywalls are dead code.
                 }}
               >
                 <LinearGradient colors={G.success} style={sv.completeLevelGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
@@ -5730,7 +6691,7 @@ const sv = StyleSheet.create({
   container:        { flex: 1, backgroundColor: C.bg },
   content:          { alignItems: 'center', padding: S.lg },
   logoWrap:         { alignItems: 'center', marginTop: S.lg, marginBottom: S.lg },
-  logoBg:           { width: 64, height: 64, borderRadius: 32, backgroundColor: C.accentDim, borderWidth: 1, borderColor: C.accent + '44', alignItems: 'center', justifyContent: 'center', shadowColor: C.accent, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 8 },
+  logoBg:           { alignItems: 'center', justifyContent: 'center' },
   subInfo:          { alignItems: 'center', marginBottom: S.xl },
   levelPill:        { flexDirection: 'row', alignItems: 'center', gap: S.sm, paddingHorizontal: S.md, paddingVertical: S.sm, borderRadius: R.full, marginBottom: S.sm },
   stagesBox:        { width: '100%', backgroundColor: C.bgCard, borderRadius: R.xxl, padding: S.lg, borderWidth: 1, borderColor: C.border },
@@ -5872,7 +6833,7 @@ function ProfileScreen() {
   };
 
   const saveName = async () => {
-    const trimmed = nameInput.trim();
+    const trimmed = cleanDisplayName(nameInput);
     if (trimmed.length > 0) {
       await saveUserName(trimmed);
       if (isAuthenticated) {
@@ -5959,8 +6920,8 @@ function ProfileScreen() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator color={C.accent} size="large" />
+      <View style={{ flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center', paddingHorizontal: S.lg }}>
+        <HandstandLoader message="Getting things ready…" />
       </View>
     );
   }
@@ -6073,10 +7034,10 @@ function ProfileScreen() {
                   resizeMode="cover"
                 />
               ) : (
-                <View style={[pf.avatarCircle, { backgroundColor: C.accentDim }]}>
+                <View style={[pf.avatarCircle, { backgroundColor: '#0A0A0B', borderWidth: 1.5, borderColor: '#D7FF3D44', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }]}>
                   {initials
                     ? <Text style={[pf.avatarInitials, { color: C.accent }]}>{initials}</Text>
-                    : <Text style={{ fontSize: 42 }}>🤸</Text>
+                    : <HandstandFigure size={100} />
                   }
                 </View>
               )}
@@ -6140,14 +7101,17 @@ function ProfileScreen() {
                 <Text style={profileStatCard.value}>{progress.submissions?.length || 0}</Text>
               </View>
 
-              {/* Stat 2 — Current Streak (HIGHLIGHTED in lime) */}
-              <View style={[profileStatCard.card, profileStatCard.cardHighlight]}>
-                <View style={[profileStatCard.iconWrap, { backgroundColor: 'rgba(0,0,0,0.18)' }]}>
-                  <Ionicons name="flame" size={16} color={C.black} />
-                </View>
-                <Text style={[profileStatCard.label, { color: 'rgba(0,0,0,0.7)' }]}>Streak</Text>
-                <Text style={[profileStatCard.value, { color: C.black }]}>{progress.streak || 0}</Text>
-              </View>
+              {/* Stat 2 — Current Streak (lime only when active) */}
+              {(() => {
+                const active = (progress.streak || 0) > 0;
+                return (
+                  <View style={[profileStatCard.card, active && profileStatCard.cardHighlight]}>
+                    <FlameIcon size={24} active={active} />
+                    <Text style={[profileStatCard.label, active && { color: 'rgba(0,0,0,0.6)' }]}>Day Streak</Text>
+                    <Text style={[profileStatCard.value, active && { color: C.black }]}>{progress.streak || 0}</Text>
+                  </View>
+                );
+              })()}
 
               {/* Stat 3 — Current Level */}
               <View style={profileStatCard.card}>
@@ -6669,22 +7633,77 @@ const pf = StyleSheet.create({
 // SCREEN – Onboarding (Movemate style)
 // ─────────────────────────────────────────────────────────────────────────────
 // ONBOARDING QUIZ
-// Steps: 0=Welcome, 1-7=Quiz questions, 8=Name, 9=Notifications, 10=Celebration
+// Steps: 0=Welcome, 1-15=Quiz questions, 16=Calculating, 17=Target date, 18=Social proof
 // ─────────────────────────────────────────────────────────────────────────────
-// qIndex 3 = Q4 ("problems"), qIndex 6 = Q7 ("injuries") — both multi-select
-const MULTI_SELECT_Q = new Set([3, 6]);
+// qIndex 6 = frustrations, qIndex 14 = injuries — both multi-select
+const MULTI_SELECT_Q = new Set([6, 14]);
+
+// Quiz option with haptic + spring pop — emotional micro-interaction
+function AnimatedQuizOption({ option, selected, onPress }) {
+  const pressScale = useRef(new Animated.Value(1)).current;
+  const checkScale = useRef(new Animated.Value(selected ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.spring(checkScale, {
+      toValue: selected ? 1 : 0,
+      tension: 180, friction: 7,
+      useNativeDriver: true,
+    }).start();
+  }, [selected, checkScale]);
+
+  const handlePress = () => {
+    Animated.sequence([
+      Animated.timing(pressScale, { toValue: 0.96, duration: 70, useNativeDriver: true }),
+      Animated.spring(pressScale, { toValue: 1, tension: 300, friction: 10, useNativeDriver: true }),
+    ]).start();
+    onPress();
+  };
+
+  return (
+    <Animated.View style={{ transform: [{ scale: pressScale }] }}>
+      <TouchableOpacity
+        style={[ob.optionCard, selected && ob.optionCardSelected]}
+        onPress={handlePress}
+        activeOpacity={0.9}
+      >
+        <Text style={[ob.optionText, selected && { color: C.black }]}>{option}</Text>
+        {selected && (
+          <Animated.View style={{ transform: [{ scale: checkScale }] }}>
+            <Ionicons name="checkmark-circle" size={20} color={C.black} />
+          </Animated.View>
+        )}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
 
 function OnboardingQuiz({ onComplete }) {
   const insets = useSafeAreaInsets();
   const [step,          setStep]          = useState(0);
   // Multi-select questions start as [], single-select start as null
   const [answers,       setAnswers]       = useState(
-    Array.from({ length: 7 }, (_, i) => MULTI_SELECT_Q.has(i) ? [] : null)
+    Array.from({ length: 15 }, (_, i) => MULTI_SELECT_Q.has(i) ? [] : null)
   );
   const [assignedLevel, setAssignedLevel] = useState(1);
+  const [calcStep,      setCalcStep]      = useState(0); // 0,1,2 during calculating screen
+  const [targetDate,    setTargetDate]    = useState(null);
+  const [goalWeeks,     setGoalWeeks]     = useState(8);
   const fadeAnim  = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
   const flameAnim = useRef(new Animated.Value(0)).current;
+  const calcSpin  = useRef(new Animated.Value(0)).current;
+  // Gentle breathing loop for the welcome hero — makes it feel alive
+  const heroBreath = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(heroBreath, { toValue: 1, duration: 2200, useNativeDriver: true }),
+      Animated.timing(heroBreath, { toValue: 0, duration: 2200, useNativeDriver: true }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [heroBreath]);
+  const heroScale = heroBreath.interpolate({ inputRange: [0, 1], outputRange: [1, 1.045] });
+  const haloOpacity = heroBreath.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] });
 
   const animateTo = (nextStep) => {
     Animated.parallel([
@@ -6704,14 +7723,14 @@ function OnboardingQuiz({ onComplete }) {
     const next = [...answers];
     if (MULTI_SELECT_Q.has(qIndex)) {
       const current = Array.isArray(next[qIndex]) ? next[qIndex] : [];
-      // Q7 "None" is exclusive: tapping it clears others; tapping others clears "None"
-      if (option === 'None') {
-        next[qIndex] = current.includes('None') ? [] : ['None'];
+      const isExclusive = (o) => o === 'None' || o === 'Nothing — I feel solid';
+      if (isExclusive(option)) {
+        next[qIndex] = current.includes(option) ? [] : [option];
       } else {
-        const withoutNone = current.filter(o => o !== 'None');
-        next[qIndex] = withoutNone.includes(option)
-          ? withoutNone.filter(o => o !== option)   // deselect
-          : [...withoutNone, option];                // select
+        const cleaned = current.filter(o => !isExclusive(o));
+        next[qIndex] = cleaned.includes(option)
+          ? cleaned.filter(o => o !== option)
+          : [...cleaned, option];
       }
     } else {
       next[qIndex] = option;
@@ -6721,51 +7740,76 @@ function OnboardingQuiz({ onComplete }) {
 
   // Returns true when the current quiz step has a valid answer
   const stepHasAnswer = (s) => {
-    if (s < 1 || s > 7) return true;
+    if (s < 1 || s > 15) return true;
     const qi = s - 1;
     const ans = answers[qi];
     return MULTI_SELECT_Q.has(qi) ? (Array.isArray(ans) && ans.length > 0) : ans !== null;
   };
 
-  // Called after last quiz question (step 7) — saves answers, goes to celebration
+  // Weeks to goal based on the user's chosen end-goal (answers[13])
+  const weeksForGoal = (goalAns) => {
+    switch (goalAns) {
+      case '10-second hold':     return 4;
+      case '30-second hold':     return 8;
+      case '1-minute hold':      return 16;
+      case 'Press to handstand': return 20;
+      case 'Walking on hands':   return 24;
+      default:                   return 8;
+    }
+  };
+
+  // Called after last quiz question (step 15) — saves answers, runs the plan-reveal sequence
   const handleQuizFinish = async () => {
     const level = assignLevel(answers);
     setAssignedLevel(level);
     try {
-      await AsyncStorage.setItem(QUIZ_ANSWERS_KEY, JSON.stringify(answers));
+      await sensitiveStore.set(QUIZ_ANSWERS_KEY, JSON.stringify(answers));
       await AsyncStorage.setItem(QUIZ_LEVEL_KEY,   String(level));
+    } catch (e) { console.warn('Quiz finish: save answers failed', e); }
+    const weeks = weeksForGoal(answers[13]);
+    setGoalWeeks(weeks);
+    const d = new Date();
+    d.setDate(d.getDate() + weeks * 7);
+    setTargetDate(d);
+    try {
+      await AsyncStorage.setItem('@handstandai_target_date', d.toISOString());
+      await AsyncStorage.setItem('@handstandai_goal_weeks', String(weeks));
     } catch (_) {}
-    // Go directly to celebration (step 10); steps 8/9 moved to post-signup flow
-    animateTo(10);
+
+    // Step 16 — Calculating screen (6 seconds, 3 rotating status lines)
+    animateTo(16);
+    setCalcStep(0);
     Animated.loop(
-      Animated.sequence([
-        Animated.timing(flameAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
-        Animated.timing(flameAnim, { toValue: 0, duration: 600, useNativeDriver: true }),
-      ])
+      Animated.timing(calcSpin, { toValue: 1, duration: 1400, useNativeDriver: true })
     ).start();
-    setTimeout(() => { onComplete(level); }, 2000);
+    setTimeout(() => setCalcStep(1), 2000);
+    setTimeout(() => setCalcStep(2), 4000);
+    // After the calculating sequence, advance to the target-date reveal (step 17)
+    setTimeout(() => {
+      calcSpin.stopAnimation();
+      animateTo(17);
+    }, 6000);
   };
 
   // Derived values
-  const qIndex      = step >= 1 && step <= 7 ? step - 1 : null;
+  const qIndex      = step >= 1 && step <= 15 ? step - 1 : null;
   const currentQ    = qIndex !== null ? QUIZ_QUESTIONS[qIndex] : null;
   const currentAns  = qIndex !== null ? answers[qIndex] : null;
   const isMulti     = qIndex !== null && MULTI_SELECT_Q.has(qIndex);
   const hasAnswer   = stepHasAnswer(step);
-  const showBar     = step >= 1 && step <= 7;
-  const barProgress = showBar ? step / 7 : 0;
+  const showBar     = step >= 1 && step <= 15;
+  const barProgress = showBar ? step / 15 : 0;
   const celebLevel  = EXERCISE_LEVELS.find(l => l.id === Math.min(assignedLevel, EXERCISE_LEVELS.length));
 
-  // Back destinations — steps 8/9 removed (moved to post-signup)
   const backDest = () => {
-    if (step >= 1 && step <= 7) return step - 1; // Q1 → welcome (0), Q2-Q7 → prev Q
+    if (step >= 1 && step <= 15) return step - 1; // Q1 → welcome (0), Q2-Q15 → prev Q
     return null;
   };
-  const showBack = step >= 1 && step <= 7;
+  const showBack = step >= 1 && step <= 15;
 
   return (
     <KeyboardAvoidingView
-      style={[ob.container, { paddingTop: insets.top, paddingBottom: insets.bottom + S.lg }]}
+      style={[ob.container, { paddingTop: insets.top, paddingBottom: insets.bottom + S.xxl + S.md }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <LinearGradient colors={[C.bg, '#0D0D0F', C.bg]} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0.5, y: 1 }} />
@@ -6790,7 +7834,22 @@ function OnboardingQuiz({ onComplete }) {
           <View style={ob.progressTrack}>
             <View style={[ob.progressFill, { width: `${barProgress * 100}%` }]} />
           </View>
-          <Text style={[T.cap, { marginTop: 6, alignSelf: 'flex-end' }]}>{step} of 7</Text>
+          <Text style={[T.cap, { marginTop: 6, alignSelf: 'flex-end', color: C.accent, fontWeight: '800', letterSpacing: 1 }]}>QUESTION {step} OF 15</Text>
+        </View>
+      )}
+
+      {/* Real-time unlocks panel — shows what the user's answers have unlocked */}
+      {showBar && step >= 2 && deriveUnlocks(answers).length > 0 && (
+        <View style={ob.unlocksPanel}>
+          <Text style={[T.cap, { color: C.textMuted, marginBottom: 6, letterSpacing: 0.5, fontWeight: '800' }]}>
+            YOUR PLAN SO FAR
+          </Text>
+          {deriveUnlocks(answers).slice(-3).map((u, i) => (
+            <View key={`unlock-${i}-${u}`} style={ob.unlockChip}>
+              <Ionicons name="checkmark-circle" size={14} color={C.accent} />
+              <Text style={ob.unlockText} numberOfLines={1}>{u}</Text>
+            </View>
+          ))}
         </View>
       )}
 
@@ -6800,22 +7859,40 @@ function OnboardingQuiz({ onComplete }) {
         {/* STEP 0 – Welcome */}
         {step === 0 && (
           <View style={ob.slide}>
-            <View style={ob.logoBg}>
-              <Text style={{ fontSize: 52 }}>🤸</Text>
+            <Animated.View style={[ob.heroGlow, { opacity: haloOpacity }]}>
+              <Animated.View style={[ob.heroIcon, { transform: [{ scale: heroScale }] }]}>
+                <HandstandFigure size={140} />
+              </Animated.View>
+            </Animated.View>
+
+            <Text style={[T.label, { color: C.accent, marginTop: S.xl, marginBottom: S.xs, letterSpacing: 3 }]}>HANDSTANDHUB</Text>
+            <Text style={[T.h1, { fontSize: 28, textAlign: 'center', lineHeight: 34, marginBottom: S.sm, fontWeight: '800' }]}>
+              Your first freestanding{'\n'}
+              <Text style={{ color: C.accent }}>handstand in 8 weeks.</Text>
+            </Text>
+            <Text style={[T.body, { color: C.textSub, textAlign: 'center', maxWidth: 300, lineHeight: 23, marginBottom: S.xl }]}>
+              A plan built around your level — not a generic routine.
+            </Text>
+
+            <View style={ob.heroFeatures}>
+              <View style={ob.heroFeatureRow}>
+                <View style={ob.heroFeatureDot} />
+                <Text style={[T.body, { color: C.text, fontWeight: '600', fontSize: 15 }]}>AI form feedback on every rep</Text>
+              </View>
+              <View style={ob.heroFeatureRow}>
+                <View style={ob.heroFeatureDot} />
+                <Text style={[T.body, { color: C.text, fontWeight: '600', fontSize: 15 }]}>Adapts to your weak spots weekly</Text>
+              </View>
+              <View style={ob.heroFeatureRow}>
+                <View style={ob.heroFeatureDot} />
+                <Text style={[T.body, { color: C.text, fontWeight: '600', fontSize: 15 }]}>Built from 1,400+ inversion drills</Text>
+              </View>
             </View>
-            <Text style={[T.label, { color: C.accent, marginTop: S.xl, marginBottom: S.sm }]}>WELCOME TO</Text>
-            <Text style={[T.h1, { fontSize: 38, textAlign: 'center', marginBottom: S.sm }]}>HandstandHub</Text>
-            <Text style={[T.h3, { color: C.textSub, fontWeight: '400', textAlign: 'center', lineHeight: 28 }]}>
-              Train smarter.{'\n'}Balance longer.
-            </Text>
-            <Text style={[T.body, { textAlign: 'center', marginTop: S.lg, maxWidth: 300, lineHeight: 22 }]}>
-              Answer 7 quick questions and we'll build your perfect starting point.
-            </Text>
           </View>
         )}
 
-        {/* STEPS 1-7 – Quiz questions */}
-        {step >= 1 && step <= 7 && currentQ && (
+        {/* STEPS 1-15 – Quiz questions */}
+        {step >= 1 && step <= 15 && currentQ && (
           <View style={ob.slide}>
             <Text style={[T.h2, { textAlign: 'center', marginBottom: isMulti ? S.xs : S.lg, lineHeight: 36 }]}>
               {currentQ.question}
@@ -6829,41 +7906,100 @@ function OnboardingQuiz({ onComplete }) {
                   ? (Array.isArray(currentAns) && currentAns.includes(option))
                   : currentAns === option;
                 return (
-                  <TouchableOpacity
+                  <AnimatedQuizOption
                     key={option}
-                    style={[ob.optionCard, selected && ob.optionCardSelected]}
+                    option={option}
+                    selected={selected}
                     onPress={() => selectAnswer(qIndex, option)}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={[ob.optionText, selected && { color: C.black }]}>{option}</Text>
-                    {selected && <Ionicons name="checkmark-circle" size={20} color={C.black} />}
-                  </TouchableOpacity>
+                  />
                 );
               })}
             </View>
           </View>
         )}
 
-        {/* STEP 10 – Celebration */}
-        {step === 10 && (
+        {/* STEP 16 – Calculating (animated) */}
+        {step === 16 && (
           <View style={[ob.slide, { justifyContent: 'center', paddingTop: S.xxl }]}>
-            <Animated.Text style={{
-              fontSize: 80,
-              opacity: flameAnim.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }),
-              transform: [{ scale: flameAnim.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1.08] }) }],
+            <Animated.View style={{
+              width: 110, height: 110, borderRadius: 55,
+              borderWidth: 3, borderColor: C.accent + '55', borderTopColor: C.accent,
+              transform: [{ rotate: calcSpin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }],
+              alignItems: 'center', justifyContent: 'center',
             }}>
-              🔥
-            </Animated.Text>
-            <Text style={[T.label, { color: C.accent, marginTop: S.xl, marginBottom: S.xs }]}>YOUR STARTING POINT</Text>
-            <Text style={[T.h1, { textAlign: 'center', fontSize: 48, color: C.accent }]}>
-              Level {assignedLevel}
+              <HandstandFigure size={120} />
+            </Animated.View>
+            <Text style={[T.label, { color: C.accent, marginTop: S.xl, letterSpacing: 2 }]}>BUILDING YOUR PLAN</Text>
+            <Text style={[T.h2, { textAlign: 'center', marginTop: S.sm, lineHeight: 30 }]}>
+              {calcStep === 0 && 'Analyzing your 15 answers…'}
+              {calcStep === 1 && `Matching ${30 + deriveUnlocks(answers).length * 4} drills…`}
+              {calcStep === 2 && `Structuring your ${goalWeeks}-week plan…`}
             </Text>
-            <Text style={[T.h3, { textAlign: 'center', marginTop: S.xs, color: C.text }]}>
-              {celebLevel?.name || 'Beginner'}
+          </View>
+        )}
+
+        {/* STEP 17 – Target date reveal */}
+        {step === 17 && (
+          <View style={[ob.slide, { justifyContent: 'center', paddingTop: S.xl }]}>
+            <Text style={[T.label, { color: C.accent, letterSpacing: 2, marginBottom: S.xs }]}>YOUR TARGET DATE</Text>
+            <Text style={[T.h1, { textAlign: 'center', fontSize: 26, lineHeight: 34, marginBottom: S.xs, maxWidth: 340 }]}>
+              You'll hit your goal on
             </Text>
-            <Text style={[T.body, { textAlign: 'center', marginTop: S.md, maxWidth: 260, lineHeight: 22 }]}>
-              Let's build your handstand from here.
+            <Text style={[T.h1, { textAlign: 'center', fontSize: 34, color: C.accent, marginBottom: S.lg }]}>
+              {targetDate ? targetDate.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' }) : ''}
             </Text>
+            {/* Mini projection graph — week-by-week wall-hold seconds */}
+            <View style={ob.projGraph}>
+              {Array.from({ length: Math.min(goalWeeks, 12) }).map((_, i) => {
+                const h = 10 + ((i + 1) / Math.min(goalWeeks, 12)) * 70;
+                return (
+                  <View key={i} style={{ flex: 1, alignItems: 'center', justifyContent: 'flex-end', height: 90 }}>
+                    <View style={{ width: '60%', height: h, backgroundColor: C.accent, borderTopLeftRadius: 4, borderTopRightRadius: 4, opacity: 0.3 + (i / 12) * 0.7 }} />
+                  </View>
+                );
+              })}
+            </View>
+            <Text style={[T.cap, { color: C.textMuted, marginTop: S.sm }]}>
+              Projected wall-hold seconds, week by week
+            </Text>
+            <View style={ob.levelStamp}>
+              <Text style={[T.cap, { color: C.textSub, letterSpacing: 1 }]}>STARTING POINT</Text>
+              <Text style={[T.h3, { color: C.accent, marginTop: 2 }]}>Level {assignedLevel} — {celebLevel?.name || 'Beginner'}</Text>
+            </View>
+          </View>
+        )}
+
+        {/* STEP 18 – Social proof */}
+        {step === 18 && (
+          <View style={[ob.slide, { justifyContent: 'center', paddingTop: S.xl }]}>
+            <Text style={[T.label, { color: C.accent, letterSpacing: 2, marginBottom: S.sm }]}>YOU'RE NOT ALONE</Text>
+            <Text style={[T.h1, { textAlign: 'center', fontSize: 28, lineHeight: 34, marginBottom: S.xs }]}>
+              Over <Text style={{ color: C.accent }}>4,200 people</Text> started{'\n'}where you are.
+            </Text>
+            <Text style={[T.body, { color: C.textSub, textAlign: 'center', marginBottom: S.lg, maxWidth: 300 }]}>
+              Real stories from this level:
+            </Text>
+            <View style={ob.proofCard}>
+              <View style={ob.proofAvatar}><Avatar2 size={44} /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={[T.body, { color: C.text, fontWeight: '700' }]}>Maya, 28</Text>
+                <Text style={[T.cap, { color: C.textSub, lineHeight: 18 }]}>"Hit my first 10-sec freestanding in week 6."</Text>
+              </View>
+            </View>
+            <View style={ob.proofCard}>
+              <View style={ob.proofAvatar}><Avatar1 size={44} /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={[T.body, { color: C.text, fontWeight: '700' }]}>Daniel, 35</Text>
+                <Text style={[T.cap, { color: C.textSub, lineHeight: 18 }]}>"The wrist prep alone saved my training."</Text>
+              </View>
+            </View>
+            <View style={ob.proofCard}>
+              <View style={ob.proofAvatar}><Avatar3 size={44} /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={[T.body, { color: C.text, fontWeight: '700' }]}>Noa, 22</Text>
+                <Text style={[T.cap, { color: C.textSub, lineHeight: 18 }]}>"30-sec hold in 9 weeks. The plan really adapts."</Text>
+              </View>
+            </View>
           </View>
         )}
 
@@ -6874,36 +8010,64 @@ function OnboardingQuiz({ onComplete }) {
         {step === 0 && (
           <TouchableOpacity style={ob.primaryBtn} onPress={() => animateTo(1)} activeOpacity={0.85}>
             <LinearGradient colors={G.accent} style={ob.primaryGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-              <Text style={[T.h4, { color: C.black, fontSize: 16, fontWeight: '900' }]}>LET'S GO</Text>
+              <Text style={[T.h4, { color: C.black, fontSize: 16, fontWeight: '900' }]}>SHOW ME MY PLAN</Text>
               <Ionicons name="arrow-forward" size={18} color={C.black} />
             </LinearGradient>
           </TouchableOpacity>
         )}
-        {step >= 1 && step <= 6 && (
-          <TouchableOpacity
-            style={[ob.primaryBtn, !hasAnswer && { opacity: 0.4 }]}
-            onPress={() => hasAnswer && animateTo(step + 1)}
-            activeOpacity={0.85}
-          >
+        {step >= 1 && step <= 14 && (
+          <>
+            <TouchableOpacity
+              style={[ob.primaryBtn, !hasAnswer && { opacity: 0.4 }]}
+              onPress={() => hasAnswer && animateTo(step + 1)}
+              activeOpacity={0.85}
+            >
+              <LinearGradient colors={G.accent} style={ob.primaryGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                <Text style={[T.h4, { color: C.black, fontSize: 16, fontWeight: '900' }]}>NEXT</Text>
+                <Ionicons name="arrow-forward" size={18} color={C.black} />
+              </LinearGradient>
+            </TouchableOpacity>
+            <TouchableOpacity style={ob.backLink} onPress={() => animateTo(backDest())} activeOpacity={0.7}>
+              <Ionicons name="arrow-back" size={14} color={C.textSub} />
+              <Text style={[T.cap, { color: C.textSub, fontWeight: '700', marginLeft: 6 }]}>Back</Text>
+            </TouchableOpacity>
+          </>
+        )}
+        {step === 15 && (
+          <>
+            <TouchableOpacity
+              style={[ob.primaryBtn, !hasAnswer && { opacity: 0.4 }]}
+              onPress={() => hasAnswer && handleQuizFinish()}
+              activeOpacity={0.85}
+            >
+              <LinearGradient colors={G.accent} style={ob.primaryGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                <Text style={[T.h4, { color: C.black, fontSize: 16, fontWeight: '900' }]}>FINISH</Text>
+                <Ionicons name="checkmark" size={18} color={C.black} />
+              </LinearGradient>
+            </TouchableOpacity>
+            <TouchableOpacity style={ob.backLink} onPress={() => animateTo(backDest())} activeOpacity={0.7}>
+              <Ionicons name="arrow-back" size={14} color={C.textSub} />
+              <Text style={[T.cap, { color: C.textSub, fontWeight: '700', marginLeft: 6 }]}>Back</Text>
+            </TouchableOpacity>
+          </>
+        )}
+        {/* step 16: no button — auto-advances to step 17 */}
+        {step === 17 && (
+          <TouchableOpacity style={ob.primaryBtn} onPress={() => animateTo(18)} activeOpacity={0.85}>
             <LinearGradient colors={G.accent} style={ob.primaryGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-              <Text style={[T.h4, { color: C.black, fontSize: 16, fontWeight: '900' }]}>NEXT</Text>
+              <Text style={[T.h4, { color: C.black, fontSize: 16, fontWeight: '900' }]}>SEE HOW WE'LL GET YOU THERE</Text>
               <Ionicons name="arrow-forward" size={18} color={C.black} />
             </LinearGradient>
           </TouchableOpacity>
         )}
-        {step === 7 && (
-          <TouchableOpacity
-            style={[ob.primaryBtn, !hasAnswer && { opacity: 0.4 }]}
-            onPress={() => hasAnswer && handleQuizFinish()}
-            activeOpacity={0.85}
-          >
+        {step === 18 && (
+          <TouchableOpacity style={ob.primaryBtn} onPress={() => onComplete(assignedLevel)} activeOpacity={0.85}>
             <LinearGradient colors={G.accent} style={ob.primaryGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-              <Text style={[T.h4, { color: C.black, fontSize: 16, fontWeight: '900' }]}>FINISH</Text>
-              <Ionicons name="checkmark" size={18} color={C.black} />
+              <Text style={[T.h4, { color: C.black, fontSize: 16, fontWeight: '900' }]}>START MY FIRST DRILL</Text>
+              <Ionicons name="arrow-forward" size={18} color={C.black} />
             </LinearGradient>
           </TouchableOpacity>
         )}
-        {/* step 10: no button — auto-navigates */}
       </View>
     </KeyboardAvoidingView>
   );
@@ -6920,16 +8084,31 @@ const ob = StyleSheet.create({
   progressFill:       { height: 4, backgroundColor: C.accent, borderRadius: 2 },
   content:            { flex: 1, alignItems: 'center', justifyContent: 'center', width: '100%', paddingHorizontal: S.lg },
   slide:              { alignItems: 'center', width: '100%' },
-  logoBg:             { width: 100, height: 100, borderRadius: 30, backgroundColor: C.accentDim, borderWidth: 1, borderColor: C.accent + '44', alignItems: 'center', justifyContent: 'center', shadowColor: C.accent, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 20, elevation: 12 },
+  logoBg:             { alignItems: 'center', justifyContent: 'center' },
+  heroBullets:        { width: '100%', maxWidth: 340, gap: 10, paddingHorizontal: S.sm },
+  heroBulletRow:      { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  heroGlow:           { width: 140, height: 140, borderRadius: 70, backgroundColor: C.accent + '0D', alignItems: 'center', justifyContent: 'center', shadowColor: C.accent, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.25, shadowRadius: 40, elevation: 0 },
+  heroIcon:           { alignItems: 'center', justifyContent: 'center' },
+  heroFeatures:       { width: '100%', maxWidth: 320, gap: 14 },
+  heroFeatureRow:     { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  heroFeatureDot:     { width: 6, height: 6, borderRadius: 3, backgroundColor: C.accent },
+  unlocksPanel:       { width: '100%', paddingHorizontal: S.lg, paddingTop: S.sm, gap: 6 },
+  unlockChip:         { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.accent + '14', borderWidth: 1, borderColor: C.accent + '33', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
+  unlockText:         { color: C.text, fontSize: 12, fontWeight: '700', flex: 1 },
+  projGraph:          { flexDirection: 'row', alignItems: 'flex-end', width: '100%', height: 100, gap: 4, paddingHorizontal: S.sm },
+  levelStamp:         { marginTop: S.lg, paddingVertical: S.sm, paddingHorizontal: S.md, borderRadius: R.xl, borderWidth: 1, borderColor: C.accent + '55', backgroundColor: C.accent + '10', alignItems: 'center' },
+  proofCard:          { flexDirection: 'row', alignItems: 'center', gap: S.sm, width: '100%', padding: S.sm, borderRadius: R.xl, backgroundColor: C.bgCard, borderWidth: 1, borderColor: C.border, marginBottom: S.xs },
+  proofAvatar:        { width: 44, height: 44, borderRadius: 22, backgroundColor: C.accentDim, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.accent + '33' },
   optionCard:         { width: '100%', padding: S.md + 2, borderRadius: R.xl, backgroundColor: C.bgCard, borderWidth: 2, borderColor: C.border, flexDirection: 'row', alignItems: 'center', gap: S.sm },
   optionCardSelected: { backgroundColor: C.accent, borderColor: C.accent },
   optionText:         { fontSize: 16, fontWeight: '700', color: C.text, flex: 1 },
   levelPill:          { flexDirection: 'row', alignItems: 'center', gap: S.md, backgroundColor: C.bgCard, borderRadius: R.xxl, padding: S.md, marginBottom: S.sm, borderWidth: 2, borderColor: C.border, width: '100%' },
   nameInput:          { width: '100%', backgroundColor: C.bgCard, borderRadius: R.xl, paddingHorizontal: S.md, paddingVertical: S.md, fontSize: 16, color: C.text, borderWidth: 1, borderColor: C.border, textAlign: 'center' },
-  btnRow:             { width: '100%', paddingHorizontal: S.lg, alignItems: 'center', gap: S.sm },
+  btnRow:             { width: '100%', paddingHorizontal: S.lg, alignItems: 'center', gap: S.sm, marginBottom: S.xl, marginTop: S.lg },
   primaryBtn:         { width: '100%', borderRadius: R.xxl, overflow: 'hidden' },
   primaryGrad:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: S.sm, paddingVertical: S.md + 2 },
   skipBtn:            { paddingVertical: S.sm, alignItems: 'center' },
+  backLink:           { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: S.sm, paddingHorizontal: S.md, marginTop: 4 },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -7142,7 +8321,7 @@ function getMonthlyHoldProgress(timerHistory) {
 function ProgressScreen() {
   const insets = useSafeAreaInsets();
   const { progress } = useContext(UserProgressContext);
-  const { isPro } = useContext(PurchaseContext);
+  const { isPro, hasActiveEntitlement } = useContext(PurchaseContext);
   const { computeForgivingStreak } = useContext(MilestoneContext);
   const { earned: earnedBadges } = useContext(BadgeContext);
   const { streak: forgivingStreak, frozen } = computeForgivingStreak(progress);
@@ -7506,52 +8685,9 @@ function ProgressScreen() {
                 ))}
               </View>
 
-              {/* ── Badges & Achievements ─────────────────────────────────── */}
-              {(() => {
-                const BADGE_CATEGORIES = ['streak', 'hold', 'level', 'practice', 'program', 'special'];
-                const CAT_LABELS = {
-                  streak: 'Streak', hold: 'Hold Time', level: 'Levels',
-                  practice: 'Practice', program: 'Programs', special: 'Special',
-                };
-                const earnedIds = new Set(earnedBadges.map(b => b.id));
-                return (
-                  <View style={pg.section}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: S.sm }}>
-                      <Text style={T.h4}>Badges & Achievements</Text>
-                      <Text style={[T.cap, { color: C.accent }]}>{earnedIds.size}/{BADGES.length} earned</Text>
-                    </View>
-                    {BADGE_CATEGORIES.map(cat => {
-                      const catBadges = BADGES.filter(b => b.category === cat);
-                      return (
-                        <View key={cat} style={{ marginBottom: S.md }}>
-                          <Text style={[T.cap, { color: C.textMuted, marginBottom: S.xs, textTransform: 'uppercase', letterSpacing: 1 }]}>
-                            {CAT_LABELS[cat]}
-                          </Text>
-                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                            {catBadges.map(badge => {
-                              const isEarned = earnedIds.has(badge.id);
-                              return (
-                                <View key={badge.id} style={[pg.badgeChip, isEarned ? pg.badgeChipEarned : pg.badgeChipLocked]}>
-                                  <Text style={{ fontSize: 18, opacity: isEarned ? 1 : 0.3 }}>{badge.icon}</Text>
-                                  <View style={{ flex: 1 }}>
-                                    <Text style={[T.small, { fontWeight: '700', color: isEarned ? C.text : C.textMuted, fontSize: 11 }]} numberOfLines={1}>
-                                      {badge.title}
-                                    </Text>
-                                    <Text style={[T.cap, { color: isEarned ? C.accent : C.textMuted, fontSize: 10 }]} numberOfLines={1}>
-                                      {isEarned ? `+${badge.xpReward} XP earned` : badge.description}
-                                    </Text>
-                                  </View>
-                                  {isEarned && <Ionicons name="checkmark-circle" size={14} color={C.accent} />}
-                                </View>
-                              );
-                            })}
-                          </View>
-                        </View>
-                      );
-                    })}
-                  </View>
-                );
-              })()}
+              {/* Badges & Achievements list intentionally hidden — earned
+                  badges only appear as a surprise pop-up the moment they unlock,
+                  never as a checklist. Keeps the rewards from feeling cheap. */}
 
               {/* Watermark — visible in screenshot */}
               <Text style={[T.cap, { textAlign: 'center', color: C.textMuted, marginBottom: S.md }]}>
@@ -7579,7 +8715,8 @@ function ProgressScreen() {
           )}
         </TouchableOpacity>
       </ScrollView>
-      {!isPro() && <ProLockOverlay featureLabel="Progress Charts" featureIcon="📊" />}
+      {/* No lock here — the forced paywall gates entry to the app, so anyone
+          who reaches this screen already has an entitlement. */}
     </View>
   );
 }
@@ -8011,7 +9148,7 @@ const pl = StyleSheet.create({
 function WeeklyPlanScreen({ navigation }) {
   const insets  = useSafeAreaInsets();
   const { progress } = useContext(UserProgressContext);
-  const { isPro } = useContext(PurchaseContext);
+  const { isPro, hasActiveEntitlement } = useContext(PurchaseContext);
 
   // ── Program state ──────────────────────────────────────────────────────────
   const [loading,          setLoading]          = useState(true);
@@ -8087,8 +9224,8 @@ function WeeklyPlanScreen({ navigation }) {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator color={C.accent} size="large" />
+      <View style={{ flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center', paddingHorizontal: S.lg }}>
+        <HandstandLoader message="Getting things ready…" />
       </View>
     );
   }
@@ -8354,7 +9491,8 @@ function WeeklyPlanScreen({ navigation }) {
         </View>
       </Modal>
 
-      {!isPro() && <ProLockOverlay featureLabel="Weekly Training Plan" featureIcon="📋" />}
+      {/* No lock here — the forced paywall gates entry to the app, so anyone
+          who reaches this screen already has an entitlement. */}
     </View>
   );
 }
@@ -8460,12 +9598,13 @@ function SignupGateModal({ visible, assignedLevel, onComplete }) {
     if (!canSubmit || loading) return;
     setLoading(true);
     try {
-      const name  = nameInput.trim();
-      const email = emailInput.trim().toLowerCase();
-      await AsyncStorage.multiSet([
-        [USER_NAME_KEY,       name],
-        [USER_EMAIL_KEY,      email],
-        [SIGNUP_COMPLETE_KEY, 'true'],
+      const name  = cleanDisplayName(nameInput);
+      const email = cleanEmail(emailInput);
+      // PII → SecureStore. Non-PII flag → AsyncStorage.
+      await Promise.all([
+        sensitiveStore.set(USER_NAME_KEY,  name),
+        sensitiveStore.set(USER_EMAIL_KEY, email),
+        AsyncStorage.setItem(SIGNUP_COMPLETE_KEY, 'true'),
       ]);
       // Persist name into progress store
       const raw = await AsyncStorage.getItem(STORAGE_KEY);
@@ -8473,8 +9612,21 @@ function SignupGateModal({ visible, assignedLevel, onComplete }) {
         const p = JSON.parse(raw);
         await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ ...p, userName: name }));
       }
+      // Fire magic-link signup to Supabase — best-effort, app continues even if it fails.
+      // The user gets a confirmation email; clicking it establishes a real session.
+      if (supabase) {
+        supabase.auth.signInWithOtp({
+          email,
+          options: {
+            shouldCreateUser: true,
+            data: { display_name: name },
+            emailRedirectTo: AUTH_REDIRECT_URL,
+          },
+        }).catch(err => console.warn('Signup gate: OTP send failed', err));
+      }
       onComplete(name);
-    } catch (_) {
+    } catch (e) {
+      console.warn('Signup gate: save failed', e);
       setLoading(false);
     }
   };
@@ -8501,14 +9653,20 @@ function SignupGateModal({ visible, assignedLevel, onComplete }) {
           {/* Header */}
           <View style={sg.header}>
             <View style={sg.logoBg}>
-              <Text style={{ fontSize: 36 }}>🤸</Text>
+              <HandstandFigure size={120} />
             </View>
-            <Text style={[T.label, { color: C.accent, marginTop: S.lg, marginBottom: S.xs }]}>CREATE FREE ACCOUNT</Text>
-            <Text style={[T.h2, { textAlign: 'center', marginBottom: S.xs }]}>Save your progress</Text>
-            <Text style={[T.body, { textAlign: 'center', maxWidth: 280, lineHeight: 22 }]}>
-              Create a free account to unlock your{'\n'}
-              <Text style={{ color: C.accent, fontWeight: '700' }}>Level {assignedLevel} program</Text>
+            <Text style={[T.label, { color: C.accent, marginTop: S.lg, marginBottom: S.xs }]}>SAVE YOUR PROGRESS</Text>
+            <Text style={[T.h2, { textAlign: 'center', marginBottom: S.xs }]}>Don't lose your Day 1 streak</Text>
+          </View>
+
+          {/* Founder's note */}
+          <View style={sg.founderCard}>
+            <Text style={sg.founderKicker}>A NOTE FROM THE FOUNDER</Text>
+            <Text style={sg.founderBody}>
+              Hey — I built HandstandHub because I spent 3 years failing my first freestanding hold.
+              Every drill here is one that actually worked. Let's get you there faster.
             </Text>
+            <Text style={sg.founderSig}>— Founder</Text>
           </View>
 
           {/* Form */}
@@ -8568,7 +9726,7 @@ function SignupGateModal({ visible, assignedLevel, onComplete }) {
 const sg = StyleSheet.create({
   content:      { alignItems: 'center', paddingHorizontal: S.lg, paddingBottom: S.xl },
   header:       { alignItems: 'center', paddingTop: S.xl },
-  logoBg:       { width: 80, height: 80, borderRadius: 24, backgroundColor: C.accentDim, borderWidth: 1, borderColor: C.accent + '44', alignItems: 'center', justifyContent: 'center' },
+  logoBg:       { alignItems: 'center', justifyContent: 'center' },
   decoTop:      { position: 'absolute', width: 240, height: 240, borderRadius: 120, backgroundColor: C.accent + '07', top: -80, right: -80 },
   decoBot:      { position: 'absolute', width: 160, height: 160, borderRadius: 80, backgroundColor: C.accent + '05', bottom: 60, left: -50 },
   form:         { width: '100%', marginTop: S.xl, gap: S.sm },
@@ -8578,11 +9736,204 @@ const sg = StyleSheet.create({
   primaryGrad:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: S.sm, paddingVertical: S.md + 2 },
   primaryLabel: { fontSize: 15, fontWeight: '900', color: C.black, textTransform: 'uppercase' },
   comingSoon:   { textAlign: 'center', fontSize: 12, color: C.textMuted, marginTop: S.md },
+  founderCard:  { width: '100%', marginTop: S.lg, padding: S.md, borderRadius: R.xl, backgroundColor: C.bgCard, borderWidth: 1, borderColor: C.accent + '33', borderLeftWidth: 3, borderLeftColor: C.accent },
+  founderKicker:{ fontSize: 10, letterSpacing: 1.5, fontWeight: '800', color: C.accent, marginBottom: 6 },
+  founderBody:  { fontSize: 13, color: C.text, lineHeight: 20, fontStyle: 'italic' },
+  founderSig:   { fontSize: 14, color: C.accent, fontWeight: '700', marginTop: 8, fontStyle: 'italic' },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // NOTIFICATIONS STEP — shown after signup (step 6 of new flow)
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELIGHTFUL LOADER — replaces plain spinners with a rotating handstand frame
+// ─────────────────────────────────────────────────────────────────────────────
+const LOADER_TIPS = [
+  'Did you know? Your wrists carry ~2× your body weight in a handstand.',
+  'Pro tip: Spread your fingers wide — grip starts at the fingertips.',
+  'Looking forward (not down) keeps the shoulders stacked.',
+  'Squeeze your butt — a hollow body is a balanced body.',
+  'Breathing slow keeps your balance ring smaller.',
+];
+const LOADER_FRAMES = ['🧍', '🤸', '🙆'];
+
+function HandstandLoader({ message = 'Working on it…', compact = false }) {
+  const [frame, setFrame] = useState(0);
+  const [tipIdx, setTipIdx] = useState(() => Math.floor(Math.random() * LOADER_TIPS.length));
+  const spin = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.loop(Animated.timing(spin, { toValue: 1, duration: 1600, useNativeDriver: true })).start();
+    const f = setInterval(() => setFrame(i => (i + 1) % LOADER_FRAMES.length), 600);
+    const t = setInterval(() => setTipIdx(i => (i + 1) % LOADER_TIPS.length), 4000);
+    return () => { clearInterval(f); clearInterval(t); spin.stopAnimation(); };
+  }, []);
+  const size = compact ? 56 : 90;
+  return (
+    <View style={{ alignItems: 'center', justifyContent: 'center', gap: compact ? 8 : 14 }}>
+      <Animated.View style={{
+        width: size, height: size, borderRadius: size / 2,
+        borderWidth: 3, borderColor: C.accent + '33', borderTopColor: C.accent,
+        alignItems: 'center', justifyContent: 'center',
+        transform: [{ rotate: spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }],
+      }}>
+        <Text style={{ fontSize: compact ? 22 : 36 }}>{LOADER_FRAMES[frame]}</Text>
+      </Animated.View>
+      {message && <Text style={[T.body, { color: C.text, fontWeight: '700', textAlign: 'center' }]}>{message}</Text>}
+      {!compact && (
+        <Text style={[T.cap, { color: C.textMuted, textAlign: 'center', maxWidth: 280, lineHeight: 16 }]} numberOfLines={2}>
+          {LOADER_TIPS[tipIdx]}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FIRST DRILL SCREEN — 30-sec wrist wake-up before signup gate
+// ─────────────────────────────────────────────────────────────────────────────
+const FIRST_DRILL_CUES = [
+  'Spread your fingers wide',
+  'Press the pads into the floor',
+  'Shift weight side to side',
+  'Rock forward, then back',
+  'Breathe — deep and slow',
+];
+const FIRST_DRILL_SECS = 30;
+
+function FirstDrillScreen({ onComplete }) {
+  const insets = useSafeAreaInsets();
+  const [phase, setPhase] = useState('ready'); // 'ready' | 'active' | 'done'
+  const [remain, setRemain] = useState(FIRST_DRILL_SECS);
+  const [cueIdx, setCueIdx] = useState(0);
+  const ringAnim = useRef(new Animated.Value(0)).current;
+  const pulse    = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (phase !== 'active') return;
+    // Tick every second
+    const tick = setInterval(() => {
+      setRemain(r => {
+        if (r <= 1) {
+          clearInterval(tick);
+          setPhase('done');
+          Animated.sequence([
+            Animated.timing(pulse, { toValue: 1, duration: 300, useNativeDriver: true }),
+            Animated.timing(pulse, { toValue: 0.95, duration: 200, useNativeDriver: true }),
+            Animated.timing(pulse, { toValue: 1, duration: 200, useNativeDriver: true }),
+          ]).start();
+          return 0;
+        }
+        return r - 1;
+      });
+    }, 1000);
+    // Rotate cues every 6 seconds
+    const cue = setInterval(() => {
+      setCueIdx(i => (i + 1) % FIRST_DRILL_CUES.length);
+    }, 6000);
+    // Animated ring sweep over the full drill duration
+    ringAnim.setValue(0);
+    Animated.timing(ringAnim, {
+      toValue: 1,
+      duration: FIRST_DRILL_SECS * 1000,
+      useNativeDriver: false,
+    }).start();
+    return () => { clearInterval(tick); clearInterval(cue); };
+  }, [phase]);
+
+  const startDrill = () => { setRemain(FIRST_DRILL_SECS); setCueIdx(0); setPhase('active'); };
+
+  return (
+    <View style={{ flex: 1, backgroundColor: C.bg, paddingTop: insets.top, paddingBottom: insets.bottom + S.lg }}>
+      <LinearGradient colors={[C.bg, '#0D0D0F', C.bg]} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0.5, y: 1 }} />
+
+      {/* Skip button */}
+      {phase !== 'done' && (
+        <TouchableOpacity
+          onPress={onComplete}
+          style={{ position: 'absolute', top: insets.top + 8, right: S.md, zIndex: 10, paddingVertical: 8, paddingHorizontal: 12 }}
+          activeOpacity={0.7}
+        >
+          <Text style={[T.cap, { color: C.textMuted, fontWeight: '700' }]}>SKIP</Text>
+        </TouchableOpacity>
+      )}
+
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: S.lg }}>
+
+        {phase === 'ready' && (
+          <>
+            <Text style={[T.label, { color: C.accent, letterSpacing: 2, marginBottom: S.xs }]}>YOUR FIRST DRILL</Text>
+            <Text style={[T.h1, { fontSize: 34, textAlign: 'center', marginBottom: S.sm }]}>
+              Wrist Wake-Up
+            </Text>
+            <Text style={[T.h3, { color: C.textSub, textAlign: 'center', fontWeight: '500', marginBottom: S.xl }]}>
+              30 seconds. You'll do this before every session.
+            </Text>
+            <View style={{ width: 160, height: 160, borderRadius: 80, backgroundColor: C.accentDim, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: C.accent + '55', marginBottom: S.xl }}>
+              <Text style={{ fontSize: 72 }}>🖐️</Text>
+            </View>
+            <TouchableOpacity onPress={startDrill} activeOpacity={0.85} style={{ width: '100%', borderRadius: R.xxl, overflow: 'hidden' }}>
+              <LinearGradient colors={G.accent} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: S.sm, paddingVertical: S.md + 2 }}>
+                <Ionicons name="play" size={18} color={C.black} />
+                <Text style={[T.h4, { color: C.black, fontSize: 16, fontWeight: '900' }]}>START DRILL</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </>
+        )}
+
+        {phase === 'active' && (
+          <>
+            <Text style={[T.label, { color: C.accent, letterSpacing: 2, marginBottom: S.sm }]}>WRIST WAKE-UP</Text>
+            <View style={{ width: 200, height: 200, alignItems: 'center', justifyContent: 'center', marginBottom: S.xl }}>
+              {/* Outer ring */}
+              <View style={{ position: 'absolute', width: 200, height: 200, borderRadius: 100, borderWidth: 6, borderColor: C.border }} />
+              {/* Progress ring (animated via rotation + clipping not possible in RN; use a simple inner filled bar instead) */}
+              <Animated.View style={{
+                position: 'absolute', width: 200, height: 200, borderRadius: 100,
+                borderWidth: 6,
+                borderColor: 'transparent',
+                borderTopColor: C.accent,
+                borderRightColor: C.accent,
+                transform: [{ rotate: ringAnim.interpolate({ inputRange: [0, 1], outputRange: ['-45deg', '315deg'] }) }],
+              }} />
+              <Text style={{ fontSize: 64, fontWeight: '900', color: C.accent }}>{remain}</Text>
+              <Text style={[T.cap, { color: C.textMuted, letterSpacing: 1 }]}>SECONDS</Text>
+            </View>
+            <View style={{ minHeight: 64, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={[T.h3, { color: C.text, textAlign: 'center' }]}>
+                {FIRST_DRILL_CUES[cueIdx]}
+              </Text>
+            </View>
+          </>
+        )}
+
+        {phase === 'done' && (
+          <Animated.View style={{ alignItems: 'center', width: '100%', transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] }) }], opacity: pulse }}>
+            <Text style={{ fontSize: 72, marginBottom: S.md }}>🔥</Text>
+            <Text style={[T.label, { color: C.accent, letterSpacing: 2, marginBottom: S.xs }]}>DAY 1 COMPLETE</Text>
+            <Text style={[T.h1, { fontSize: 30, textAlign: 'center', marginBottom: S.sm }]}>
+              You just did your first drill.
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: S.md, paddingHorizontal: S.lg, paddingVertical: S.sm, borderRadius: R.xxl, backgroundColor: C.accent + '1A', borderWidth: 1, borderColor: C.accent + '55' }}>
+              <Ionicons name="flash" size={18} color={C.accent} />
+              <Text style={[T.h4, { color: C.accent, fontSize: 16 }]}>+50 XP earned</Text>
+            </View>
+            <Text style={[T.body, { color: C.textSub, textAlign: 'center', marginTop: S.lg, maxWidth: 320 }]}>
+              Save your streak so it doesn't reset. One tap.
+            </Text>
+            <TouchableOpacity onPress={onComplete} activeOpacity={0.85} style={{ width: '100%', borderRadius: R.xxl, overflow: 'hidden', marginTop: S.lg }}>
+              <LinearGradient colors={G.accent} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: S.sm, paddingVertical: S.md + 2 }}>
+                <Text style={[T.h4, { color: C.black, fontSize: 16, fontWeight: '900' }]}>SAVE MY PROGRESS</Text>
+                <Ionicons name="arrow-forward" size={18} color={C.black} />
+              </LinearGradient>
+            </TouchableOpacity>
+          </Animated.View>
+        )}
+
+      </View>
+    </View>
+  );
+}
 
 function NotificationsStep({ onComplete }) {
   const insets = useSafeAreaInsets();
@@ -8596,11 +9947,10 @@ function NotificationsStep({ onComplete }) {
     <View style={{ flex: 1, backgroundColor: C.bg, paddingTop: insets.top, paddingBottom: insets.bottom + S.lg }}>
       <LinearGradient colors={[C.bg, '#0D0D0F', C.bg]} style={StyleSheet.absoluteFill} />
       <Animated.View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: S.lg, opacity: fadeAnim }}>
-        <Text style={[T.label, { color: C.accent, marginBottom: S.sm }]}>STAY CONSISTENT</Text>
-        <Text style={{ fontSize: 56, marginBottom: S.sm }}>🔔</Text>
-        <Text style={[T.h2, { textAlign: 'center', marginBottom: S.xs }]}>Never Miss a Session</Text>
-        <Text style={[T.body, { textAlign: 'center', marginBottom: S.xl, maxWidth: 300, lineHeight: 22 }]}>
-          Enable daily reminders and streak alerts so you never lose momentum.
+        <Text style={[T.label, { color: C.accent, marginBottom: S.xs, letterSpacing: 2 }]}>ONE LAST THING</Text>
+        <Text style={[T.h2, { textAlign: 'center', marginBottom: S.xs, fontSize: 26 }]}>Training 4×/week is what{'\n'}moves the needle.</Text>
+        <Text style={[T.body, { color: C.textSub, textAlign: 'center', marginBottom: S.lg, maxWidth: 320, lineHeight: 22 }]}>
+          We'll send ONE reminder at a time that works for you. No spam.
         </Text>
         {[
           { icon: '⏰', title: 'Daily training reminder', desc: "We'll nudge you each morning" },
@@ -8632,12 +9982,12 @@ function NotificationsStep({ onComplete }) {
           activeOpacity={0.85}
         >
           <LinearGradient colors={G.accent} style={ob.primaryGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-            <Text style={[T.h4, { color: C.black, fontSize: 16, fontWeight: '900' }]}>ENABLE REMINDERS</Text>
+            <Text style={[T.h4, { color: C.black, fontSize: 16, fontWeight: '900' }]}>YES, REMIND ME</Text>
             <Ionicons name="notifications-outline" size={18} color={C.black} />
           </LinearGradient>
         </TouchableOpacity>
         <TouchableOpacity style={ob.skipBtn} onPress={onComplete} activeOpacity={0.7}>
-          <Text style={[T.small, { color: C.textMuted }]}>Skip — I'll set this up later</Text>
+          <Text style={[T.small, { color: C.textMuted }]}>Maybe later</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -8707,7 +10057,7 @@ function WelcomeScreen({ navigation }) {
 
       <Animated.View style={[au.welcomeContent, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
         <View style={au.welcomeLogo}>
-          <Text style={{ fontSize: 52 }}>🤸</Text>
+          <HandstandFigure size={140} />
         </View>
         <Text style={[T.label, { color: C.accent, marginTop: S.xl, letterSpacing: 2 }]}>WELCOME TO</Text>
         <Text style={[T.h1, { fontSize: 36, textAlign: 'center', marginTop: S.xs }]}>HandstandHub</Text>
@@ -8754,7 +10104,7 @@ function SignUpScreen({ navigation }) {
     if (!validate()) return;
     setLoading(true);
     try {
-      await signUp(email.trim().toLowerCase(), password, displayName.trim());
+      await signUp(cleanEmail(email), password, cleanDisplayName(displayName));
       setSuccess(true);
     } catch (e) {
       setError(friendlyAuthError(e));
@@ -8960,7 +10310,7 @@ const au = StyleSheet.create({
   deco1:         { position: 'absolute', width: 280, height: 280, borderRadius: 140, backgroundColor: C.accent + '07', top: -80, right: -80 },
   deco2:         { position: 'absolute', width: 200, height: 200, borderRadius: 100, backgroundColor: C.accent + '05', bottom: 40, left: -60 },
   welcomeContent:{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: S.lg },
-  welcomeLogo:   { width: 100, height: 100, borderRadius: 30, backgroundColor: C.accentDim, borderWidth: 1, borderColor: C.accent + '44', alignItems: 'center', justifyContent: 'center', shadowColor: C.accent, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 20, elevation: 12 },
+  welcomeLogo:   { alignItems: 'center', justifyContent: 'center' },
   formScroll:    { flexGrow: 1, paddingHorizontal: S.lg, paddingTop: S.lg, paddingBottom: S.xl },
   backBtn:       { width: 36, height: 36, borderRadius: R.full, backgroundColor: C.bgCard, alignItems: 'center', justifyContent: 'center', marginBottom: S.xl, borderWidth: 1, borderColor: C.border },
   input:         { backgroundColor: C.bgCard, borderRadius: R.lg, paddingHorizontal: S.md, paddingVertical: S.md, fontSize: 15, color: C.text, borderWidth: 1, borderColor: C.border, marginBottom: S.xs },
@@ -8991,11 +10341,8 @@ const NAV_THEME = {
 
 function CustomTabBar({ state, descriptors, navigation }) {
   const insets = useSafeAreaInsets();
-  const { isPro, showPaywall } = useContext(PurchaseContext);
   const { isPreview, triggerGate } = useContext(PreviewContext);
 
-  // Plan and Progress tabs are Pro-only features
-  const PRO_TABS     = new Set(['Plan', 'Progress']);
   // Profile and Progress trigger the signup gate in preview mode
   const GATED_TABS   = new Set(['Profile', 'Progress']);
 
@@ -9005,7 +10352,8 @@ function CustomTabBar({ state, descriptors, navigation }) {
         const { options } = descriptors[route.key];
         const label = options.tabBarLabel ?? route.name;
         const isFocused = state.index === index;
-        const isProTab  = PRO_TABS.has(route.name) && !isPro();
+        // Pro-only tab dimming removed — every user has full access.
+        const isProTab  = false;
 
         const iconName = {
           Home:     isFocused ? 'home'         : 'home-outline',
@@ -9157,9 +10505,10 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        const [quizDone, previewMode, signupDone, userName] =
-          await AsyncStorage.multiGet([QUIZ_COMPLETE_KEY, PREVIEW_MODE_KEY, SIGNUP_COMPLETE_KEY, USER_NAME_KEY])
+        const [quizDone, previewMode, signupDone, purchaseRaw] =
+          await AsyncStorage.multiGet([QUIZ_COMPLETE_KEY, PREVIEW_MODE_KEY, SIGNUP_COMPLETE_KEY, PURCHASE_KEY])
             .then(pairs => pairs.map(([, v]) => v));
+        const userName = await sensitiveStore.get(USER_NAME_KEY); // PII — SecureStore
 
         const level = await AsyncStorage.getItem(QUIZ_LEVEL_KEY);
         if (level) setAssignedLevel(parseInt(level, 10) || 1);
@@ -9168,6 +10517,18 @@ export default function App() {
         if (userName) { setStage('app'); return; }
 
         if (!quizDone) { setStage('quiz'); return; }
+
+        // Entitlement check — hard paywall gate between quiz and everything else
+        let hasEntitlement = false;
+        if (purchaseRaw) {
+          try {
+            const p = JSON.parse(purchaseRaw);
+            const inTrial = p.trialStartedAt &&
+              (new Date() - new Date(p.trialStartedAt)) < TRIAL_DAYS * 86400000;
+            hasEntitlement = !!p.isPro || !!inTrial;
+          } catch (_) {}
+        }
+        if (!hasEntitlement) { setStage('paywall_required'); return; }
 
         // Quiz done but signup not done
         if (!signupDone) {
@@ -9204,7 +10565,18 @@ export default function App() {
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
       await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
     } catch (_) {}
-    setStage('preview');
+    setStage('paywall_required');
+  }, []);
+
+  // Called by PaywallGateScreen once the user has an active entitlement (trial or Pro)
+  const handlePaywallCleared = useCallback(() => {
+    setStage('first_drill');
+  }, []);
+
+  // Called when the FirstDrillScreen completes — go straight to signup gate
+  const handleFirstDrillComplete = useCallback(async () => {
+    try { await AsyncStorage.setItem('@handstandai_first_drill_done', 'true'); } catch (_) {}
+    setStage('signup_gate');
   }, []);
 
   // Called when preview mode triggers the signup gate
@@ -9246,8 +10618,16 @@ export default function App() {
         AVATAR_KEY,
         NOTIFICATIONS_KEY, PLAN_KEY, MIGRATION_KEY,
         MILESTONES_KEY, WEEKLY_SUMMARY_KEY, AI_QUEUE_KEY,
+        PURCHASE_KEY, // clear sub/trial so full new-user flow can be tested
       ]);
-    } catch (_) {}
+      // Clear PII from SecureStore (best-effort).
+      await Promise.all([USER_NAME_KEY, USER_EMAIL_KEY, QUIZ_ANSWERS_KEY].map(k =>
+        sensitiveStore.remove(k).catch(() => {})
+      ));
+      // End the Supabase session so the JWT can't be replayed elsewhere.
+      try { if (supabase) await supabase.auth.signOut(); }
+      catch (e) { console.warn('Reset: supabase.signOut failed', e); }
+    } catch (e) { console.warn('handleReset failed', e); }
     setAssignedLevel(1);
     setStage('quiz');
   }, []);
@@ -9276,6 +10656,24 @@ export default function App() {
               </MilestoneProvider>
             </PurchaseProvider>
           </BadgeProvider>
+        )}
+
+        {/* PAYWALL REQUIRED — hard gate between quiz and anything else */}
+        {stage === 'paywall_required' && (
+          <BadgeProvider>
+            <PurchaseProvider>
+              <MilestoneProvider>
+                <UserProgressProvider onReset={handleReset}>
+                  <PaywallGateScreen onCleared={handlePaywallCleared} />
+                </UserProgressProvider>
+              </MilestoneProvider>
+            </PurchaseProvider>
+          </BadgeProvider>
+        )}
+
+        {/* FIRST DRILL — 30-sec wrist wake-up before signup */}
+        {stage === 'first_drill' && (
+          <FirstDrillScreen onComplete={handleFirstDrillComplete} />
         )}
 
         {/* PREVIEW — user browses freely, gate shown on trigger */}
