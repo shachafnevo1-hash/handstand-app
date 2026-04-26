@@ -6767,6 +6767,12 @@ function ProfileScreen() {
   const [pwSuccess,        setPwSuccess]        = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarUri,       setAvatarUri]       = useState(null);
+  // OTP sign-in for unauthenticated users (works in Expo Go — no deep link needed)
+  const [otpEmail,        setOtpEmail]        = useState('');
+  const [otpCode,         setOtpCode]         = useState('');
+  const [otpStep,         setOtpStep]         = useState('email'); // 'email' | 'code' | 'done'
+  const [otpLoading,      setOtpLoading]      = useState(false);
+  const [otpError,        setOtpError]        = useState('');
   const fadeAnim     = useRef(new Animated.Value(0)).current;
   const slideAnim    = useRef(new Animated.Value(20)).current;
   const toastOpacity = useRef(new Animated.Value(0)).current;
@@ -7381,6 +7387,97 @@ function ProfileScreen() {
             </View>
           </KeyboardAvoidingView>
         </Modal>
+
+        {/* ── Sign-in banner for unauthenticated users (OTP — works in Expo Go) ── */}
+        {!isAuthenticated && supabase && (
+          <Animated.View style={[{ opacity: fadeAnim, marginHorizontal: S.md, marginTop: S.lg }]}>
+            <View style={[pf.accountRow, { flexDirection: 'column', alignItems: 'flex-start', gap: S.sm, padding: S.md }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: S.sm }}>
+                <Ionicons name="cloud-outline" size={18} color={C.accent} />
+                <Text style={[T.h4, { color: C.accent }]}>Connect Account</Text>
+              </View>
+              <Text style={[T.cap, { color: C.textSub }]}>Sign in to enable AI form analysis and cloud backup.</Text>
+
+              {otpStep === 'email' && (
+                <>
+                  <TextInput
+                    style={[pf.nameInput, { width: '100%' }]}
+                    value={otpEmail}
+                    onChangeText={t => { setOtpEmail(t); setOtpError(''); }}
+                    placeholder="your@email.com"
+                    placeholderTextColor={C.textMuted}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  {otpError ? <Text style={{ color: C.error, fontSize: 12 }}>{otpError}</Text> : null}
+                  <TouchableOpacity
+                    style={[pf.modalSave, { width: '100%', opacity: otpLoading ? 0.5 : 1 }]}
+                    disabled={otpLoading}
+                    onPress={async () => {
+                      const email = cleanEmail(otpEmail);
+                      if (!email) { setOtpError('Enter a valid email'); return; }
+                      setOtpLoading(true); setOtpError('');
+                      const { error } = await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: false } });
+                      setOtpLoading(false);
+                      if (error) { setOtpError(error.message); return; }
+                      setOtpStep('code');
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    <LinearGradient colors={G.accent} style={pf.modalSaveGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                      {otpLoading
+                        ? <ActivityIndicator color={C.black} size="small" />
+                        : <Text style={[T.small, { color: C.black, fontWeight: '800' }]}>Send Code</Text>}
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </>
+              )}
+
+              {otpStep === 'code' && (
+                <>
+                  <Text style={[T.cap, { color: C.textSub }]}>Check your email for a 6-digit code.</Text>
+                  <TextInput
+                    style={[pf.nameInput, { width: '100%', letterSpacing: 6, textAlign: 'center', fontSize: 22 }]}
+                    value={otpCode}
+                    onChangeText={t => { setOtpCode(t.replace(/\D/g, '').slice(0, 6)); setOtpError(''); }}
+                    placeholder="000000"
+                    placeholderTextColor={C.textMuted}
+                    keyboardType="number-pad"
+                    maxLength={6}
+                    autoFocus
+                  />
+                  {otpError ? <Text style={{ color: C.error, fontSize: 12 }}>{otpError}</Text> : null}
+                  <TouchableOpacity
+                    style={[pf.modalSave, { width: '100%', opacity: (otpLoading || otpCode.length < 6) ? 0.5 : 1 }]}
+                    disabled={otpLoading || otpCode.length < 6}
+                    onPress={async () => {
+                      setOtpLoading(true); setOtpError('');
+                      const { error } = await supabase.auth.verifyOtp({
+                        email: cleanEmail(otpEmail),
+                        token: otpCode,
+                        type: 'email',
+                      });
+                      setOtpLoading(false);
+                      if (error) { setOtpError('Wrong code or it expired. Try again.'); setOtpCode(''); return; }
+                      setOtpStep('done');
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    <LinearGradient colors={G.accent} style={pf.modalSaveGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                      {otpLoading
+                        ? <ActivityIndicator color={C.black} size="small" />
+                        : <Text style={[T.small, { color: C.black, fontWeight: '800' }]}>Verify</Text>}
+                    </LinearGradient>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => { setOtpStep('email'); setOtpCode(''); setOtpError(''); }} activeOpacity={0.7}>
+                    <Text style={[T.cap, { color: C.accent, marginTop: S.xs }]}>← Change email</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          </Animated.View>
+        )}
 
         {/* Account actions (authenticated users) */}
         {isAuthenticated && (
