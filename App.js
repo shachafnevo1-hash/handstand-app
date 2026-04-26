@@ -5836,8 +5836,9 @@ function VideoSubmissionScreen({ route, navigation }) {
   const recRef       = useRef(null);
   const scanLoopRef  = useRef(null);
   const pulseLoopRef = useRef(null);
-  const isRecordingRef = useRef(false);
-  const isMountedRef   = useRef(true);
+  const isRecordingRef  = useRef(false);
+  const isMountedRef    = useRef(true);
+  const cameraReadyRef  = useRef(false);
 
   useEffect(() => () => {
     isMountedRef.current = false;
@@ -5900,9 +5901,14 @@ function VideoSubmissionScreen({ route, navigation }) {
       clearInterval(recRef.current);
       stopPulse();
       // Switch to picture mode so takePictureAsync works in runAICheck.
-      // Give the camera 250 ms to reinitialize before we attempt a capture.
+      // Force remount via key={cameraMode}, then wait until onCameraReady fires (up to 5s).
+      cameraReadyRef.current = false;
+      setCameraReady(false);
       setCameraMode('picture');
-      await new Promise(resolve => setTimeout(resolve, 250));
+      const modeSwitch = Date.now();
+      while (!cameraReadyRef.current && Date.now() - modeSwitch < 5000) {
+        await new Promise(r => setTimeout(r, 100));
+      }
     }
     await runAICheck(capturedUri);
   };
@@ -6063,8 +6069,9 @@ function VideoSubmissionScreen({ route, navigation }) {
         ref={cameraRef}
         style={StyleSheet.absoluteFill}
         facing={facing}
+        key={cameraMode}
         mode={cameraMode}
-        onCameraReady={() => setCameraReady(true)}
+        onCameraReady={() => { setCameraReady(true); cameraReadyRef.current = true; }}
       />
 
       {/* Top bar */}

@@ -78,16 +78,16 @@ serve(async (req: Request) => {
   }
   const userId = userData.user.id;
 
-  // 2. Entitlement check — must have active sub or be inside the 7-day trial.
-  //    Reads from the public.entitlements view (see migration 002).
-  const { data: ent } = await supabase
-    .from('entitlements')
-    .select('is_active')
-    .eq('user_id', userId)
-    .maybeSingle();
-  if (!ent?.is_active) {
-    return jsonResp({ error: 'subscription_required' }, 402, req);
-  }
+  // 2. Entitlement check — skip during beta (all signed-in users get AI access).
+  //    TODO: re-enable when RevenueCat is wired up.
+  // const { data: ent } = await supabase
+  //   .from('entitlements')
+  //   .select('is_active')
+  //   .eq('user_id', userId)
+  //   .maybeSingle();
+  // if (!ent?.is_active) {
+  //   return jsonResp({ error: 'subscription_required' }, 402, req);
+  // }
 
   // 3. Parse + validate payload.
   let body: { imageBase64?: string };
